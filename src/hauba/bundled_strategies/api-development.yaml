@@ -1,0 +1,72 @@
+name: api-development
+description: "API service from spec to documentation — RESTful design, auth, testing, and docs"
+domain: api
+
+agents:
+  - role: api-designer
+    skills: [api-design-and-integration, data-engineering]
+  - role: backend-engineer
+    skills: [code-generation, api-design-and-integration, security-hardening]
+  - role: qa-engineer
+    skills: [testing-and-quality, api-design-and-integration]
+
+milestones:
+  - id: m1-spec-design
+    description: "API specification and contract design"
+    tasks:
+      - "Identify resources, operations, and relationships"
+      - "Design URL structure following REST conventions"
+      - "Write OpenAPI specification with request/response schemas"
+      - "Define authentication and authorization requirements"
+    dependencies: []
+
+  - id: m2-models
+    description: "Data models and database layer"
+    tasks:
+      - "Implement database models from the spec"
+      - "Create migration scripts"
+      - "Add model validation and serialization"
+      - "Set up database connection with pooling"
+    dependencies: [m1-spec-design]
+
+  - id: m3-endpoints
+    description: "API endpoint implementation"
+    tasks:
+      - "Implement CRUD handlers for each resource"
+      - "Add input validation and error handling"
+      - "Implement pagination, filtering, and sorting"
+      - "Add request/response logging middleware"
+    dependencies: [m2-models]
+
+  - id: m4-auth
+    description: "Authentication and authorization"
+    tasks:
+      - "Implement authentication middleware (JWT or session)"
+      - "Add role-based access control per endpoint"
+      - "Implement rate limiting"
+      - "Add CORS configuration"
+    dependencies: [m3-endpoints]
+
+  - id: m5-testing
+    description: "Comprehensive API testing"
+    tasks:
+      - "Write unit tests for business logic"
+      - "Write integration tests for each endpoint"
+      - "Test authentication and authorization edge cases"
+      - "Test error responses and validation messages"
+    dependencies: [m4-auth]
+
+  - id: m6-documentation
+    description: "API documentation and deployment"
+    tasks:
+      - "Generate API documentation from OpenAPI spec"
+      - "Add usage examples for each endpoint"
+      - "Write deployment and configuration guide"
+      - "Set up monitoring and health check endpoints"
+    dependencies: [m5-testing]
+
+quality_gates:
+  - lint
+  - type-check
+  - tests
+  - api-contract-validation

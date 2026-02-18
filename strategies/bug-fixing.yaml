@@ -1,0 +1,69 @@
+name: bug-fixing
+description: "Systematic bug investigation and fix — reproduce, isolate, root-cause, fix, test, deploy"
+domain: bug
+
+agents:
+  - role: debugger
+    skills: [debugging-and-repair, code-generation]
+  - role: tester
+    skills: [testing-and-quality, debugging-and-repair]
+
+milestones:
+  - id: m1-reproduce
+    description: "Reproduce the bug reliably"
+    tasks:
+      - "Gather bug report details: expected vs actual, steps to reproduce"
+      - "Set up reproduction environment matching reporter's context"
+      - "Write a failing test that demonstrates the bug"
+      - "Confirm the bug is reproducible and document exact trigger"
+    dependencies: []
+
+  - id: m2-isolate
+    description: "Isolate the bug to a specific component"
+    tasks:
+      - "Trace execution from trigger point through affected code paths"
+      - "Add diagnostic logging at key decision points"
+      - "Narrow scope using binary search or git bisect if regression"
+      - "Identify the exact function or line where behavior diverges"
+    dependencies: [m1-reproduce]
+
+  - id: m3-root-cause
+    description: "Identify and document the root cause"
+    tasks:
+      - "Analyze the isolated code for the underlying defect"
+      - "Distinguish symptoms from root cause"
+      - "Document why the bug exists (missing check, wrong logic, race condition)"
+      - "Assess blast radius: are other code paths affected?"
+    dependencies: [m2-isolate]
+
+  - id: m4-fix
+    description: "Implement the fix with minimal changes"
+    tasks:
+      - "Write the fix targeting the root cause, not symptoms"
+      - "Keep changes minimal and focused"
+      - "Update the failing test to verify the fix"
+      - "Add edge case tests discovered during investigation"
+    dependencies: [m3-root-cause]
+
+  - id: m5-regression-test
+    description: "Verify fix and ensure no regressions"
+    tasks:
+      - "Run full test suite and confirm all tests pass"
+      - "Test related functionality for side effects"
+      - "Verify fix in the same environment where bug was reported"
+      - "Write commit message documenting root cause and fix"
+    dependencies: [m4-fix]
+
+  - id: m6-deploy
+    description: "Deploy fix and close the loop"
+    tasks:
+      - "Submit fix for code review"
+      - "Deploy to staging and verify"
+      - "Deploy to production with monitoring"
+      - "Close bug report with root cause summary"
+    dependencies: [m5-regression-test]
+
+quality_gates:
+  - failing-test-exists
+  - tests
+  - no-regressions

@@ -1,0 +1,62 @@
+# hauba.yaml — Declarative Agent Team Configuration
+# This file defines your AI engineering team. Run with: hauba compose up
+
+team: "my-project"
+description: "Full-stack SaaS application"
+
+# Default LLM for all agents (can be overridden per agent)
+model: "claude-sonnet-4-5-20250929"
+
+# Global settings
+settings:
+  max_parallel_agents: 4
+  deliberation_min_seconds: 30
+  sandbox: "process"  # "process" (default) | "docker" | "none"
+  memory: "sqlite"
+
+# Agent definitions
+agents:
+  architect:
+    role: "Senior Software Architect"
+    description: "Designs system architecture, database schema, and API contracts"
+    skills:
+      - system-design
+      - database-design
+      - api-design
+    model: "claude-sonnet-4-5-20250929"  # Use stronger model for architecture
+
+  backend:
+    role: "Backend Engineer"
+    description: "Implements API endpoints, business logic, and database layer"
+    skills:
+      - fastapi
+      - postgresql
+      - auth
+      - testing
+    depends_on: [architect]
+
+  frontend:
+    role: "Frontend Engineer"
+    description: "Builds UI components, pages, and client-side logic"
+    skills:
+      - nextjs
+      - tailwind
+      - react
+      - accessibility
+    depends_on: [architect]
+
+  devops:
+    role: "DevOps Engineer"
+    description: "Sets up Docker, CI/CD, monitoring, and deployment"
+    skills:
+      - docker
+      - ci-cd
+      - monitoring
+      - security
+    depends_on: [backend, frontend]
+
+# Strategy to follow (optional)
+strategy: "saas-building"
+
+# Output directory
+output: "./output"

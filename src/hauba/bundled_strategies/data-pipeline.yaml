@@ -1,0 +1,72 @@
+name: data-pipeline
+description: "End-to-end data pipeline — from source ingestion through transformation to validated storage with monitoring"
+domain: data
+
+agents:
+  - role: data-architect
+    skills: [data-engineering, api-design-and-integration]
+  - role: data-engineer
+    skills: [data-engineering, code-generation]
+  - role: qa-engineer
+    skills: [testing-and-quality, data-engineering]
+
+milestones:
+  - id: m1-schema-design
+    description: "Data modeling and schema design"
+    tasks:
+      - "Catalog source data formats, volumes, and update frequencies"
+      - "Design target schema with normalization trade-offs documented"
+      - "Define data quality rules and validation constraints"
+      - "Plan schema evolution strategy"
+    dependencies: []
+
+  - id: m2-ingestion
+    description: "Data ingestion from sources"
+    tasks:
+      - "Build source connectors with retry logic and error handling"
+      - "Implement incremental extraction (CDC, watermarks, or timestamps)"
+      - "Add schema validation at ingestion boundary"
+      - "Log ingestion metrics (records, bytes, duration)"
+    dependencies: [m1-schema-design]
+
+  - id: m3-transform
+    description: "Data transformation and business logic"
+    tasks:
+      - "Implement transformation functions with clear input/output contracts"
+      - "Add data cleansing (dedup, null handling, type coercion)"
+      - "Apply business rules and derived calculations"
+      - "Write unit tests for each transformation"
+    dependencies: [m2-ingestion]
+
+  - id: m4-storage
+    description: "Target storage and output"
+    tasks:
+      - "Implement target writer with transaction support"
+      - "Add partition strategy for query performance"
+      - "Create indexes for common query patterns"
+      - "Implement idempotent writes for safe re-runs"
+    dependencies: [m3-transform]
+
+  - id: m5-validation
+    description: "Data quality validation and reconciliation"
+    tasks:
+      - "Implement row count reconciliation between source and target"
+      - "Add checksum validation for critical fields"
+      - "Build data quality dashboard with pass/fail metrics"
+      - "Set up alerting for quality threshold violations"
+    dependencies: [m4-storage]
+
+  - id: m6-monitoring
+    description: "Pipeline monitoring and operational readiness"
+    tasks:
+      - "Add pipeline execution logging and metrics"
+      - "Configure alerting for failures and SLA breaches"
+      - "Write operational runbook with troubleshooting steps"
+      - "Test failure recovery and checkpoint resume"
+    dependencies: [m5-validation]
+
+quality_gates:
+  - data-quality-check
+  - row-count-reconciliation
+  - tests
+  - performance-benchmark

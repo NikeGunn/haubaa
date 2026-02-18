@@ -1,0 +1,76 @@
+name: saas-building
+description: "Full SaaS application from architecture to launch — handles auth, billing, multi-tenancy, and deployment"
+domain: saas
+
+agents:
+  - role: architect
+    skills: [full-stack-engineering, api-design-and-integration]
+  - role: backend-engineer
+    skills: [code-generation, api-design-and-integration, data-engineering]
+  - role: frontend-engineer
+    skills: [code-generation, full-stack-engineering]
+  - role: devops-engineer
+    skills: [devops-and-deployment, security-hardening]
+  - role: qa-engineer
+    skills: [testing-and-quality, security-hardening]
+
+milestones:
+  - id: m1-architecture
+    description: "System architecture design — entities, database schema, API contracts, project structure"
+    tasks:
+      - "Analyze requirements and identify core entities and relationships"
+      - "Design database schema with migration strategy"
+      - "Define API contract (RESTful endpoints with OpenAPI spec)"
+      - "Create project scaffold with chosen tech stack"
+    dependencies: []
+
+  - id: m2-auth-and-database
+    description: "Authentication, authorization, and database layer"
+    tasks:
+      - "Implement database models and initial migrations"
+      - "Set up authentication flow (signup, login, JWT/session)"
+      - "Implement role-based access control"
+      - "Add password hashing and token management"
+    dependencies: [m1-architecture]
+
+  - id: m3-api-layer
+    description: "Core API endpoints with business logic"
+    tasks:
+      - "Implement CRUD endpoints for each resource"
+      - "Add input validation and error handling"
+      - "Implement pagination, filtering, and sorting"
+      - "Add rate limiting and request logging"
+    dependencies: [m2-auth-and-database]
+
+  - id: m4-frontend
+    description: "Frontend pages, components, and state management"
+    tasks:
+      - "Set up frontend project with routing and layout"
+      - "Build authentication pages (login, signup, password reset)"
+      - "Implement dashboard and core feature pages"
+      - "Add API client with error handling and loading states"
+    dependencies: [m3-api-layer]
+
+  - id: m5-devops
+    description: "Deployment, CI/CD, and monitoring"
+    tasks:
+      - "Create Dockerfile with multi-stage build"
+      - "Configure CI/CD pipeline (lint, test, build, deploy)"
+      - "Set up monitoring and health check endpoints"
+      - "Configure secrets management"
+    dependencies: [m3-api-layer, m4-frontend]
+
+  - id: m6-launch
+    description: "Final testing, security audit, and launch checklist"
+    tasks:
+      - "Run full test suite with coverage report"
+      - "Perform security audit (OWASP Top 10 checklist)"
+      - "Write deployment documentation and runbook"
+      - "Execute launch checklist and verify production"
+    dependencies: [m5-devops]
+
+quality_gates:
+  - lint
+  - type-check
+  - tests
+  - security-scan
