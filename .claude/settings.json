@@ -1,0 +1,20 @@
+{
+  "project": {
+    "name": "hauba",
+    "description": "Open-source AI agent framework — your AI engineering team",
+    "type": "python",
+    "python_version": "3.11+"
+  },
+  "conventions": {
+    "commit_style": "conventional",
+    "test_framework": "pytest",
+    "linter": "ruff",
+    "type_checker": "pyright"
+  },
+  "paths": {
+    "source": "src/hauba",
+    "tests": "tests",
+    "skills": "skills",
+    "strategies": "strategies"
+  }
+}
