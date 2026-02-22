@@ -1,6 +1,5 @@
 # Hauba — One-liner Installer for Windows
 # Usage: irm hauba.tech/install.ps1 | iex
-$ErrorActionPreference = "Stop"
 
 function Write-Info($msg) { Write-Host "[hauba] $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "[hauba] $msg" -ForegroundColor Yellow }
@@ -18,16 +17,26 @@ Write-Host "  https://hauba.tech" -ForegroundColor Cyan
 Write-Host ""
 
 # Find Python 3.11+
-$python = $null
-foreach ($cmd in @("python", "python3", "py -3")) {
+$pythonExe = $null
+$pythonArgs = @()
+
+$candidates = @(
+    @{ Exe = "python"; Args = @() },
+    @{ Exe = "python3"; Args = @() },
+    @{ Exe = "py"; Args = @("-3") }
+)
+
+foreach ($c in $candidates) {
     try {
-        $ver = & ($cmd.Split(" ")[0]) ($cmd.Split(" ") | Select-Object -Skip 1) -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
-        if ($ver) {
-            $parts = $ver.Split(".")
+        $testArgs = $c.Args + @("-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+        $ver = & $c.Exe @testArgs 2>$null
+        if ($LASTEXITCODE -eq 0 -and $ver) {
+            $parts = $ver.Trim().Split(".")
             $major = [int]$parts[0]
             $minor = [int]$parts[1]
             if ($major -ge 3 -and $minor -ge 11) {
-                $python = $cmd
+                $pythonExe = $c.Exe
+                $pythonArgs = $c.Args
                 break
             }
         }
@@ -36,21 +45,36 @@ foreach ($cmd in @("python", "python3", "py -3")) {
     }
 }
 
-if (-not $python) {
+if (-not $pythonExe) {
     Write-Err "Python 3.11+ is required."
     Write-Err "Download from: https://python.org/downloads/"
-    exit 1
+    return
 }
 
-$pyVersion = & ($python.Split(" ")[0]) ($python.Split(" ") | Select-Object -Skip 1) --version 2>&1
-Write-Info "Found $python ($pyVersion)"
+$pyVersion = & $pythonExe @pythonArgs --version 2>&1 | Out-String
+Write-Info "Found $pythonExe ($($pyVersion.Trim()))"
 
 Write-Info "Installing hauba from PyPI..."
-& ($python.Split(" ")[0]) ($python.Split(" ") | Select-Object -Skip 1) -m pip install --upgrade hauba 2>&1 | Select-Object -Last 1
+
+# Run pip install — capture all output, ignore stderr noise from pip
+$pipArgs = $pythonArgs + @("-m", "pip", "install", "--upgrade", "hauba")
+$pipOutput = & $pythonExe @pipArgs 2>&1 | Out-String
+$pipExit = $LASTEXITCODE
+
+if ($pipExit -ne 0) {
+    Write-Err "Installation failed:"
+    Write-Host $pipOutput -ForegroundColor Red
+    Write-Err "Try manually: $pythonExe -m pip install hauba"
+    return
+}
+
+# Show last meaningful line
+$lastLine = ($pipOutput -split "`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -Last 1)
+if ($lastLine) { Write-Host "  $($lastLine.Trim())" -ForegroundColor DarkGray }
 
 # Verify
-$haubaPath = Get-Command hauba -ErrorAction SilentlyContinue
-if ($haubaPath) {
+$haubaCmd = Get-Command hauba -ErrorAction SilentlyContinue
+if ($haubaCmd) {
     Write-Host ""
     Write-Info "Installation complete!"
     Write-Host ""
@@ -61,6 +85,6 @@ if ($haubaPath) {
     Write-Host ""
 } else {
     Write-Warn "Installed but 'hauba' not found in PATH."
-    Write-Warn "Try: $python -m hauba --help"
-    Write-Warn "Or restart your terminal."
+    Write-Warn "Try: $pythonExe -m hauba --help"
+    Write-Warn "Or restart your terminal and try again."
 }
