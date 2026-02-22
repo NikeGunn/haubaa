@@ -114,7 +114,17 @@ async def test_play_hides_data_when_disabled(
 
 
 def test_topic_colors_cover_all_prefixes() -> None:
-    expected = {"task", "agent", "llm", "tool", "browser", "screen", "replay", "ledger", "milestone"}
+    expected = {
+        "task",
+        "agent",
+        "llm",
+        "tool",
+        "browser",
+        "screen",
+        "replay",
+        "ledger",
+        "milestone",
+    }
     assert expected.issubset(set(TOPIC_COLORS.keys()))
 
 

@@ -16,7 +16,8 @@ runner = CliRunner()
 def skill_file(tmp_path):
     """Create a valid skill .md file."""
     f = tmp_path / "my-skill.md"
-    f.write_text("""# Skill: my-skill
+    f.write_text(
+        """# Skill: my-skill
 
 ## Capabilities
 - Does amazing things
@@ -29,7 +30,9 @@ def skill_file(tmp_path):
 
 ## Constraints
 - Don't be not amazing
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
     return f
 
 
@@ -39,14 +42,17 @@ def skills_dir(tmp_path):
     d = tmp_path / "skills"
     d.mkdir()
     skill = d / "test-skill.md"
-    skill.write_text("""# Skill: test-skill
+    skill.write_text(
+        """# Skill: test-skill
 
 ## Capabilities
 - Testing capability
 
 ## When To Use
 - During tests
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
     return d
 
 
@@ -59,8 +65,10 @@ class TestSkillList:
 
     def test_list_with_skills_dir(self, skills_dir):
         """List should find skills in a custom directory."""
-        with patch("hauba.skills.cli.SKILLS_DIR", skills_dir), \
-             patch("hauba.skills.cli.BUNDLED_SKILLS_DIR", skills_dir.parent / "nonexistent"):
+        with (
+            patch("hauba.skills.cli.SKILLS_DIR", skills_dir),
+            patch("hauba.skills.cli.BUNDLED_SKILLS_DIR", skills_dir.parent / "nonexistent"),
+        ):
             result = runner.invoke(skill_app, ["list"])
             assert result.exit_code == 0
             assert "test-skill" in result.output
@@ -113,15 +121,19 @@ class TestSkillCreate:
 
 class TestSkillShow:
     def test_show_skill(self, skills_dir):
-        with patch("hauba.skills.cli.SKILLS_DIR", skills_dir), \
-             patch("hauba.skills.cli.BUNDLED_SKILLS_DIR", skills_dir.parent / "nonexistent"):
+        with (
+            patch("hauba.skills.cli.SKILLS_DIR", skills_dir),
+            patch("hauba.skills.cli.BUNDLED_SKILLS_DIR", skills_dir.parent / "nonexistent"),
+        ):
             result = runner.invoke(skill_app, ["show", "test-skill"])
             assert result.exit_code == 0
             assert "test-skill" in result.output
 
     def test_show_not_found(self, tmp_path):
-        with patch("hauba.skills.cli.SKILLS_DIR", tmp_path), \
-             patch("hauba.skills.cli.BUNDLED_SKILLS_DIR", tmp_path):
+        with (
+            patch("hauba.skills.cli.SKILLS_DIR", tmp_path),
+            patch("hauba.skills.cli.BUNDLED_SKILLS_DIR", tmp_path),
+        ):
             result = runner.invoke(skill_app, ["show", "nonexistent-skill"])
             assert result.exit_code == 1
             assert "not found" in result.output.lower()

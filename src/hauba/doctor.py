@@ -176,7 +176,9 @@ class Doctor:
         try:
             import litellm
 
-            version = getattr(litellm, "__version__", None) or getattr(litellm, "version", "unknown")
+            version = getattr(litellm, "__version__", None) or getattr(
+                litellm, "version", "unknown"
+            )
             return CheckResult(
                 name="LiteLLM",
                 passed=True,

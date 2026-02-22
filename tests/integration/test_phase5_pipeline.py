@@ -39,7 +39,9 @@ class TestSkillLoading:
             "research-and-analysis",
             "refactoring-and-migration",
         }
-        assert expected.issubset(set(skills.keys())), f"Missing skills: {expected - set(skills.keys())}"
+        assert expected.issubset(set(skills.keys())), (
+            f"Missing skills: {expected - set(skills.keys())}"
+        )
 
     def test_skills_have_capabilities(self):
         loader = SkillLoader(skill_dirs=[BUNDLED_SKILLS_DIR])
@@ -55,7 +57,9 @@ class TestSkillLoading:
         matches = matcher.match("build a full-stack web application with API")
         assert len(matches) > 0
         skill_names = {m.skill.name for m in matches}
-        assert "full-stack-engineering" in skill_names or "api-design-and-integration" in skill_names
+        assert (
+            "full-stack-engineering" in skill_names or "api-design-and-integration" in skill_names
+        )
 
     def test_skill_matching_debug(self):
         loader = SkillLoader(skill_dirs=[BUNDLED_SKILLS_DIR])
@@ -86,7 +90,9 @@ class TestStrategyLoading:
             "code-review-and-refactor",
             "research-and-prototype",
         }
-        assert expected.issubset(set(strategies.keys())), f"Missing strategies: {expected - set(strategies.keys())}"
+        assert expected.issubset(set(strategies.keys())), (
+            f"Missing strategies: {expected - set(strategies.keys())}"
+        )
 
     def test_strategies_have_milestones(self):
         engine = StrategyEngine(strategy_dirs=[BUNDLED_STRATEGIES_DIR])

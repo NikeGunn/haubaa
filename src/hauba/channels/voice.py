@@ -65,9 +65,7 @@ class VoiceChannel:
             self._whisper_model = whisper.load_model(self.stt_model)
             logger.info("voice.whisper_loaded", model=self.stt_model)
         except ImportError:
-            raise VoiceChannelError(
-                "openai-whisper not installed. Run: pip install hauba[voice]"
-            )
+            raise VoiceChannelError("openai-whisper not installed. Run: pip install hauba[voice]")
 
     async def listen(self, duration: float = 5.0) -> str:
         """Record audio and transcribe to text.
@@ -79,9 +77,7 @@ class VoiceChannel:
             Transcribed text from the audio recording.
         """
         if not SOUNDDEVICE_AVAILABLE:
-            raise VoiceChannelError(
-                "sounddevice not installed. Run: pip install hauba[voice]"
-            )
+            raise VoiceChannelError("sounddevice not installed. Run: pip install hauba[voice]")
 
         await self.initialize()
 
@@ -131,9 +127,7 @@ class VoiceChannel:
             Path to the generated audio file.
         """
         if not EDGE_TTS_AVAILABLE:
-            raise VoiceChannelError(
-                "edge-tts not installed. Run: pip install hauba[voice]"
-            )
+            raise VoiceChannelError("edge-tts not installed. Run: pip install hauba[voice]")
 
         if not output_path:
             tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
@@ -159,7 +153,9 @@ class VoiceChannel:
             await asyncio.to_thread(sounddevice.play, data, samplerate)
             await asyncio.to_thread(sounddevice.wait)
         except ImportError:
-            logger.warning("voice.soundfile_missing", msg="Cannot play audio — soundfile not installed")
+            logger.warning(
+                "voice.soundfile_missing", msg="Cannot play audio — soundfile not installed"
+            )
         except Exception as exc:
             logger.error("voice.play_failed", error=str(exc))
 

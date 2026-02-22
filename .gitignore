@@ -48,3 +48,12 @@ desktop.ini
 
 # Logs
 *.log
+
+# Ruff cache
+.ruff_cache/
+
+# Docs (generated/internal)
+ARCHITECTURE_V2.md
+BUILD_PHASES_V2.md
+PROGRESS.md
+workflow-guidelines.md

@@ -44,12 +44,15 @@ class LLMRouter:
             if settings.provider == "anthropic":
                 litellm.api_key = settings.api_key
                 import os
+
                 os.environ["ANTHROPIC_API_KEY"] = settings.api_key
             elif settings.provider == "openai":
                 import os
+
                 os.environ["OPENAI_API_KEY"] = settings.api_key
             elif settings.provider == "deepseek":
                 import os
+
                 os.environ["DEEPSEEK_API_KEY"] = settings.api_key
 
     def _get_model_string(self) -> str:
@@ -97,7 +100,7 @@ class LLMRouter:
                 last_exc = exc
                 safe_msg = self._sanitize_error(str(exc))
                 if attempt < MAX_RETRIES and self._is_retryable(str(exc)):
-                    delay = RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR ** attempt)
+                    delay = RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR**attempt)
                     logger.warning(
                         "llm.retry",
                         model=model,
@@ -111,7 +114,9 @@ class LLMRouter:
                 raise HaubaError(f"LLM call failed: {safe_msg}") from exc
         else:
             safe_msg = self._sanitize_error(str(last_exc))
-            raise HaubaError(f"LLM call failed after {MAX_RETRIES} retries: {safe_msg}") from last_exc
+            raise HaubaError(
+                f"LLM call failed after {MAX_RETRIES} retries: {safe_msg}"
+            ) from last_exc
 
         elapsed = time.monotonic() - start
         content = response.choices[0].message.content or ""
@@ -166,7 +171,7 @@ class LLMRouter:
         for attempt in range(MAX_RETRIES + 1):
             try:
                 response = await litellm.acompletion(**kwargs)
-                async for chunk in response:
+                async for chunk in response:  # type: ignore[union-attr]
                     delta = chunk.choices[0].delta
                     if delta and delta.content:
                         yield delta.content
@@ -175,7 +180,7 @@ class LLMRouter:
                 last_exc = exc
                 safe_msg = self._sanitize_error(str(exc))
                 if attempt < MAX_RETRIES and self._is_retryable(str(exc)):
-                    delay = RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR ** attempt)
+                    delay = RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR**attempt)
                     logger.warning("llm.stream_retry", attempt=attempt + 1, delay=f"{delay:.1f}s")
                     await asyncio.sleep(delay)
                     continue
@@ -193,8 +198,9 @@ class LLMRouter:
     def _sanitize_error(self, msg: str) -> str:
         """Remove API keys from error messages."""
         import re
+
         # Mask any sk-proj-... or sk-... tokens
-        sanitized = re.sub(r'sk-[A-Za-z0-9_-]{10,}', 'sk-***REDACTED***', msg)
+        sanitized = re.sub(r"sk-[A-Za-z0-9_-]{10,}", "sk-***REDACTED***", msg)
         return sanitized
 
     @property

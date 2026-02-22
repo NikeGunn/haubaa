@@ -56,14 +56,10 @@ class WebSearchTool(BaseTool):
                 results = await self._search_duckduckgo(query, num_results)
         except Exception as exc:
             logger.error("web_search.failed", query=query, error=str(exc))
-            return ToolResult(
-                tool_name=self.name, success=False, error=str(exc), exit_code=1
-            )
+            return ToolResult(tool_name=self.name, success=False, error=str(exc), exit_code=1)
 
         if not results:
-            return ToolResult(
-                tool_name=self.name, success=True, output="No results found."
-            )
+            return ToolResult(tool_name=self.name, success=True, output="No results found.")
 
         output_lines = []
         for r in results:
@@ -72,9 +68,7 @@ class WebSearchTool(BaseTool):
 
         return ToolResult(tool_name=self.name, success=True, output=output)
 
-    async def _search_duckduckgo(
-        self, query: str, num_results: int
-    ) -> list[SearchResult]:
+    async def _search_duckduckgo(self, query: str, num_results: int) -> list[SearchResult]:
         """Search DuckDuckGo via HTML scraping."""
         async with httpx.AsyncClient(
             headers={"User-Agent": DDG_USER_AGENT},
@@ -93,12 +87,8 @@ class WebSearchTool(BaseTool):
 
         # Match result blocks: <a class="result__a" href="...">title</a>
         # and <a class="result__snippet" ...>snippet</a>
-        link_pattern = re.compile(
-            r'class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>', re.DOTALL
-        )
-        snippet_pattern = re.compile(
-            r'class="result__snippet"[^>]*>(.*?)</(?:a|span)>', re.DOTALL
-        )
+        link_pattern = re.compile(r'class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>', re.DOTALL)
+        snippet_pattern = re.compile(r'class="result__snippet"[^>]*>(.*?)</(?:a|span)>', re.DOTALL)
 
         links = link_pattern.findall(html)
         snippets = snippet_pattern.findall(html)
@@ -128,9 +118,7 @@ class WebSearchTool(BaseTool):
 
         return results
 
-    async def _search_brave(
-        self, query: str, num_results: int, api_key: str
-    ) -> list[SearchResult]:
+    async def _search_brave(self, query: str, num_results: int, api_key: str) -> list[SearchResult]:
         """Search via Brave Search API."""
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(

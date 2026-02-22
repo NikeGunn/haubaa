@@ -35,14 +35,18 @@ def test_voice_channel_custom_params() -> None:
 
 
 def test_is_available_false_when_deps_missing(voice: VoiceChannel) -> None:
-    with patch("hauba.channels.voice.SOUNDDEVICE_AVAILABLE", False), \
-         patch("hauba.channels.voice.EDGE_TTS_AVAILABLE", False):
+    with (
+        patch("hauba.channels.voice.SOUNDDEVICE_AVAILABLE", False),
+        patch("hauba.channels.voice.EDGE_TTS_AVAILABLE", False),
+    ):
         assert not voice.is_available
 
 
 def test_is_available_true_when_deps_present(voice: VoiceChannel) -> None:
-    with patch("hauba.channels.voice.SOUNDDEVICE_AVAILABLE", True), \
-         patch("hauba.channels.voice.EDGE_TTS_AVAILABLE", True):
+    with (
+        patch("hauba.channels.voice.SOUNDDEVICE_AVAILABLE", True),
+        patch("hauba.channels.voice.EDGE_TTS_AVAILABLE", True),
+    ):
         assert voice.is_available
 
 
@@ -75,9 +79,11 @@ async def test_speak_with_mocked_tts(voice: VoiceChannel, tmp_path) -> None:
     mock_communicate = AsyncMock()
     mock_communicate.save = AsyncMock()
 
-    with patch("hauba.channels.voice.EDGE_TTS_AVAILABLE", True), \
-         patch("hauba.channels.voice.SOUNDDEVICE_AVAILABLE", False), \
-         patch("hauba.channels.voice.edge_tts", create=True) as mock_tts:
+    with (
+        patch("hauba.channels.voice.EDGE_TTS_AVAILABLE", True),
+        patch("hauba.channels.voice.SOUNDDEVICE_AVAILABLE", False),
+        patch("hauba.channels.voice.edge_tts", create=True) as mock_tts,
+    ):
         mock_tts.Communicate = MagicMock(return_value=mock_communicate)
         result = await voice.speak("hello world", output_path=out_path)
         assert result == out_path

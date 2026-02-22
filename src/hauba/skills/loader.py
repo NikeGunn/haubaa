@@ -31,7 +31,7 @@ class Skill:
         """Extract keywords from capabilities and when_to_use for matching."""
         words: set[str] = set()
         for text in self.capabilities + self.when_to_use:
-            words.update(w.lower() for w in re.findall(r'\w+', text) if len(w) > 3)
+            words.update(w.lower() for w in re.findall(r"\w+", text) if len(w) > 3)
         return words
 
 

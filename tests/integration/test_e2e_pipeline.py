@@ -40,20 +40,24 @@ MOCK_STATUS_RESPONSE = """STATUS: done - File created successfully."""
 @pytest.fixture
 def config(tmp_path: Path) -> ConfigManager:
     settings_path = tmp_path / "settings.json"
-    settings_path.write_text(json.dumps({
-        "llm": {
-            "provider": "anthropic",
-            "model": "claude-sonnet-4-5-20250929",
-            "max_tokens": 4096,
-            "temperature": 0.7,
-            "api_key": "test-key",
-            "base_url": "",
-        },
-        "owner_name": "TestUser",
-        "data_dir": "",
-        "log_level": "INFO",
-        "think_time": 0.0,
-    }))
+    settings_path.write_text(
+        json.dumps(
+            {
+                "llm": {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-5-20250929",
+                    "max_tokens": 4096,
+                    "temperature": 0.7,
+                    "api_key": "test-key",
+                    "base_url": "",
+                },
+                "owner_name": "TestUser",
+                "data_dir": "",
+                "log_level": "INFO",
+                "think_time": 0.0,
+            }
+        )
+    )
     return ConfigManager(settings_path)
 
 

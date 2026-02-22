@@ -27,9 +27,11 @@ def test_discord_channel_creates_with_mock_deps() -> None:
     mock_intents = MagicMock()
     mock_intents.default.return_value = mock_intents
 
-    with patch("hauba.channels.discord.DISCORD_AVAILABLE", True), \
-         patch("hauba.channels.discord.discord", create=True) as mock_discord, \
-         patch("hauba.channels.discord.commands", create=True) as mock_commands:
+    with (
+        patch("hauba.channels.discord.DISCORD_AVAILABLE", True),
+        patch("hauba.channels.discord.discord", create=True) as mock_discord,
+        patch("hauba.channels.discord.commands", create=True) as mock_commands,
+    ):
         mock_discord.Intents = mock_intents
         mock_bot = MagicMock()
         mock_commands.Bot = MagicMock(return_value=mock_bot)
@@ -48,9 +50,11 @@ async def test_discord_on_task_event_broadcasts() -> None:
     mock_intents = MagicMock()
     mock_intents.default.return_value = mock_intents
 
-    with patch("hauba.channels.discord.DISCORD_AVAILABLE", True), \
-         patch("hauba.channels.discord.discord", create=True) as mock_discord, \
-         patch("hauba.channels.discord.commands", create=True) as mock_commands:
+    with (
+        patch("hauba.channels.discord.DISCORD_AVAILABLE", True),
+        patch("hauba.channels.discord.discord", create=True) as mock_discord,
+        patch("hauba.channels.discord.commands", create=True) as mock_commands,
+    ):
         mock_discord.Intents = mock_intents
         mock_commands.Bot = MagicMock(return_value=MagicMock())
 

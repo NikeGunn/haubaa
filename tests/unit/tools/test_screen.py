@@ -34,6 +34,7 @@ def _screen_patches(mock_pyautogui=None, stop_file=None):
 
 # --- Graceful degradation ---
 
+
 async def test_screen_unavailable(screen_tool):
     with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", False):
         result = await screen_tool.execute(action="capture")
@@ -42,6 +43,7 @@ async def test_screen_unavailable(screen_tool):
 
 
 # --- Action validation ---
+
 
 async def test_unknown_action(screen_tool):
     with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True):
@@ -52,17 +54,21 @@ async def test_unknown_action(screen_tool):
 
 # --- Emergency stop ---
 
+
 async def test_emergency_stop_blocks_actions(screen_tool, tmp_path):
     stop_file = tmp_path / "STOP"
     stop_file.write_text("stop")
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", stop_file):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", stop_file),
+    ):
         result = await screen_tool.execute(action="capture")
         assert not result.success
         assert "Emergency stop" in result.error
 
 
 # --- Capture (always allowed) ---
+
 
 async def test_capture_success(screen_tool_no_control, tmp_path):
     """Capture is allowed even when control is disabled."""
@@ -71,9 +77,11 @@ async def test_capture_success(screen_tool_no_control, tmp_path):
     mock_pyautogui.screenshot = MagicMock(return_value=mock_screenshot)
 
     out_path = str(tmp_path / "test.png")
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", tmp_path / "NO_STOP"), \
-         patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", tmp_path / "NO_STOP"),
+        patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True),
+    ):
         result = await screen_tool_no_control.execute(action="capture", path=out_path)
         assert result.success
         assert "Screenshot saved" in result.output
@@ -82,17 +90,22 @@ async def test_capture_success(screen_tool_no_control, tmp_path):
 
 # --- Control actions require allow_control ---
 
+
 async def test_click_blocked_without_control(screen_tool_no_control):
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")),
+    ):
         result = await screen_tool_no_control.execute(action="click", x=100, y=200)
         assert not result.success
         assert "Screen control disabled" in result.error
 
 
 async def test_type_blocked_without_control(screen_tool_no_control):
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")),
+    ):
         result = await screen_tool_no_control.execute(action="type", text="hello")
         assert not result.success
         assert "Screen control disabled" in result.error
@@ -100,14 +113,17 @@ async def test_type_blocked_without_control(screen_tool_no_control):
 
 # --- Click ---
 
+
 async def test_click_success(screen_tool):
     mock_pyautogui = MagicMock()
     mock_pyautogui.size = MagicMock(return_value=(1920, 1080))
     mock_pyautogui.click = MagicMock()
 
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")), \
-         patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")),
+        patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True),
+    ):
         result = await screen_tool.execute(action="click", x=100, y=200)
         assert result.success
         assert "Clicked" in result.output
@@ -118,9 +134,11 @@ async def test_click_out_of_bounds(screen_tool):
     mock_pyautogui = MagicMock()
     mock_pyautogui.size = MagicMock(return_value=(1920, 1080))
 
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")), \
-         patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")),
+        patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True),
+    ):
         result = await screen_tool.execute(action="click", x=5000, y=200)
         assert not result.success
         assert "out of screen bounds" in result.error
@@ -128,11 +146,14 @@ async def test_click_out_of_bounds(screen_tool):
 
 # --- Type ---
 
+
 async def test_type_success(screen_tool):
     mock_pyautogui = MagicMock()
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")), \
-         patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")),
+        patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True),
+    ):
         result = await screen_tool.execute(action="type", text="hello world")
         assert result.success
         assert "11 characters" in result.output
@@ -140,9 +161,11 @@ async def test_type_success(screen_tool):
 
 async def test_type_requires_text(screen_tool):
     mock_pyautogui = MagicMock()
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")), \
-         patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")),
+        patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True),
+    ):
         result = await screen_tool.execute(action="type")
         assert not result.success
         assert "Text required" in result.error
@@ -150,11 +173,14 @@ async def test_type_requires_text(screen_tool):
 
 # --- Scroll ---
 
+
 async def test_scroll_success(screen_tool):
     mock_pyautogui = MagicMock()
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")), \
-         patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")),
+        patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True),
+    ):
         result = await screen_tool.execute(action="scroll", clicks=5)
         assert result.success
         assert "5 clicks" in result.output
@@ -162,11 +188,14 @@ async def test_scroll_success(screen_tool):
 
 # --- Hotkey ---
 
+
 async def test_hotkey_success(screen_tool):
     mock_pyautogui = MagicMock()
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")), \
-         patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")),
+        patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True),
+    ):
         result = await screen_tool.execute(action="hotkey", keys="ctrl,c")
         assert result.success
         assert "ctrl+c" in result.output
@@ -175,9 +204,11 @@ async def test_hotkey_success(screen_tool):
 
 async def test_hotkey_requires_keys(screen_tool):
     mock_pyautogui = MagicMock()
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")), \
-         patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")),
+        patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True),
+    ):
         result = await screen_tool.execute(action="hotkey")
         assert not result.success
         assert "Keys required" in result.error
@@ -185,13 +216,16 @@ async def test_hotkey_requires_keys(screen_tool):
 
 # --- Coordinate validation ---
 
+
 async def test_validate_coords_negative(screen_tool):
     mock_pyautogui = MagicMock()
     mock_pyautogui.size = MagicMock(return_value=(1920, 1080))
 
-    with patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True), \
-         patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")), \
-         patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True):
+    with (
+        patch("hauba.tools.screen.PYAUTOGUI_AVAILABLE", True),
+        patch("hauba.tools.screen.EMERGENCY_STOP_FILE", Path("/nonexistent/STOP")),
+        patch("hauba.tools.screen.pyautogui", mock_pyautogui, create=True),
+    ):
         result = await screen_tool.execute(action="click", x=-10, y=100)
         assert not result.success
         assert "out of screen bounds" in result.error

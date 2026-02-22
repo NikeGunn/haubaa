@@ -16,6 +16,7 @@ def search_tool():
 
 # --- Validation ---
 
+
 async def test_search_requires_query(search_tool):
     result = await search_tool.execute()
     assert not result.success
@@ -23,6 +24,7 @@ async def test_search_requires_query(search_tool):
 
 
 # --- DuckDuckGo ---
+
 
 async def test_ddg_search_returns_results(search_tool):
     """Mock DuckDuckGo HTML response and verify parsing."""
@@ -45,10 +47,13 @@ async def test_ddg_search_returns_results(search_tool):
     mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.post = AsyncMock(return_value=mock_resp)
 
-    with patch("hauba.tools.web.httpx.AsyncClient", return_value=mock_client), \
-         patch.dict("os.environ", {}, clear=False):
+    with (
+        patch("hauba.tools.web.httpx.AsyncClient", return_value=mock_client),
+        patch.dict("os.environ", {}, clear=False),
+    ):
         # Ensure no BRAVE_API_KEY
         import os
+
         orig = os.environ.pop("BRAVE_API_KEY", None)
         try:
             result = await search_tool.execute(query="test query")
@@ -72,6 +77,7 @@ async def test_ddg_no_results(search_tool):
 
     with patch("hauba.tools.web.httpx.AsyncClient", return_value=mock_client):
         import os
+
         orig = os.environ.pop("BRAVE_API_KEY", None)
         try:
             result = await search_tool.execute(query="noresults12345")
@@ -84,6 +90,7 @@ async def test_ddg_no_results(search_tool):
 
 
 # --- Brave Search ---
+
 
 async def test_brave_search_used_when_key_set(search_tool):
     """Brave Search API is used when BRAVE_API_KEY is set."""
@@ -103,8 +110,10 @@ async def test_brave_search_used_when_key_set(search_tool):
     mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.get = AsyncMock(return_value=mock_resp)
 
-    with patch("hauba.tools.web.httpx.AsyncClient", return_value=mock_client), \
-         patch.dict("os.environ", {"BRAVE_API_KEY": "test-key"}):
+    with (
+        patch("hauba.tools.web.httpx.AsyncClient", return_value=mock_client),
+        patch.dict("os.environ", {"BRAVE_API_KEY": "test-key"}),
+    ):
         result = await search_tool.execute(query="brave test")
 
     assert result.success
@@ -112,6 +121,7 @@ async def test_brave_search_used_when_key_set(search_tool):
 
 
 # --- Error handling ---
+
 
 async def test_search_network_error(search_tool):
     mock_client = AsyncMock()
@@ -121,6 +131,7 @@ async def test_search_network_error(search_tool):
 
     with patch("hauba.tools.web.httpx.AsyncClient", return_value=mock_client):
         import os
+
         orig = os.environ.pop("BRAVE_API_KEY", None)
         try:
             result = await search_tool.execute(query="test")
@@ -134,12 +145,13 @@ async def test_search_network_error(search_tool):
 
 # --- DDG URL parsing ---
 
+
 def test_ddg_html_parsing_with_uddg_redirect(search_tool):
     """DuckDuckGo wraps URLs — test extraction of real URL."""
-    html = '''
+    html = """
     <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Freal.com&rut=abc">Real Title</a>
     <a class="result__snippet">A real snippet.</a>
-    '''
+    """
     results = search_tool._parse_ddg_html(html, 5)
     assert len(results) == 1
     assert results[0].url == "https://real.com"

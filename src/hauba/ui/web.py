@@ -40,9 +40,7 @@ class WebUI:
 
     def __init__(self, events: EventEmitter, on_task: Any = None) -> None:
         if not FASTAPI_AVAILABLE:
-            raise WebUIError(
-                "FastAPI not installed. Run: pip install hauba[web]"
-            )
+            raise WebUIError("FastAPI not installed. Run: pip install hauba[web]")
 
         self.events = events
         self._on_task = on_task
@@ -83,10 +81,12 @@ class WebUI:
             if not instruction:
                 return {"error": "instruction required"}
 
-            self._task_history.append({
-                "instruction": instruction,
-                "status": "submitted",
-            })
+            self._task_history.append(
+                {
+                    "instruction": instruction,
+                    "status": "submitted",
+                }
+            )
 
             if self._on_task:
                 asyncio.create_task(self._on_task(instruction))
@@ -121,13 +121,15 @@ class WebUI:
         if not self._connections:
             return
 
-        payload = json.dumps({
-            "topic": event.topic,
-            "data": event.data,
-            "source": event.source,
-            "task_id": event.task_id,
-            "timestamp": event.timestamp.isoformat(),
-        })
+        payload = json.dumps(
+            {
+                "topic": event.topic,
+                "data": event.data,
+                "source": event.source,
+                "task_id": event.task_id,
+                "timestamp": event.timestamp.isoformat(),
+            }
+        )
 
         disconnected: list[WebSocket] = []
         for ws in self._connections:

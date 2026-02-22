@@ -150,18 +150,21 @@ class DirectorAgent(BaseAgent):
         """Conditionally register tools if dependencies are available."""
         try:
             from hauba.tools.web import WebSearchTool
+
             self._tools["web_search"] = WebSearchTool()
         except Exception:
             pass
 
         try:
             from hauba.tools.browser import BrowserTool
+
             self._tools["browser"] = BrowserTool()
         except Exception:
             pass
 
         try:
             from hauba.tools.screen import ScreenTool
+
             allow = self.config.settings.allow_screen_control
             self._tools["screen"] = ScreenTool(allow_control=allow)
         except Exception:
@@ -199,10 +202,14 @@ class DirectorAgent(BaseAgent):
 
         # Log each task addition to WAL
         for step in plan.steps:
-            self._wal.append(WAL_OP_ADD_TASK, step.id, {
-                "description": step.description,
-                "dependencies": step.dependencies,
-            })
+            self._wal.append(
+                WAL_OP_ADD_TASK,
+                step.id,
+                {
+                    "description": step.description,
+                    "dependencies": step.dependencies,
+                },
+            )
 
         # Gate 1: Pre-execution check
         self._gates.gate_1_pre_execution()
@@ -211,11 +218,16 @@ class DirectorAgent(BaseAgent):
         todo_md = self._ledger.generate_todo_md()
         (self._workspace / "todo.md").write_text(todo_md, encoding="utf-8")
 
-        await self.events.emit(EVENT_LEDGER_CREATED, {
-            "task_id": task_id,
-            "step_count": len(plan.steps),
-            "ledger_id": self._ledger.ledger_id,
-        }, source=self.id, task_id=task_id)
+        await self.events.emit(
+            EVENT_LEDGER_CREATED,
+            {
+                "task_id": task_id,
+                "step_count": len(plan.steps),
+                "ledger_id": self._ledger.ledger_id,
+            },
+            source=self.id,
+            task_id=task_id,
+        )
 
         logger.info("director.ledger_created", task_id=task_id, steps=len(plan.steps))
         return plan
@@ -254,7 +266,7 @@ class DirectorAgent(BaseAgent):
             LLMMessage(
                 role="user",
                 content=f"Task: {plan.understanding}\n\nPlan:\n"
-                + "\n".join(f"{i+1}. {s.description}" for i, s in enumerate(plan.steps)),
+                + "\n".join(f"{i + 1}. {s.description}" for i, s in enumerate(plan.steps)),
             ),
         ]
 
@@ -265,9 +277,15 @@ class DirectorAgent(BaseAgent):
             if self._ledger and self._wal:
                 self._wal.append(WAL_OP_START_TASK, step.id)
                 self._ledger.start_task(step.id)
-                await self.events.emit(EVENT_LEDGER_TASK_STARTED, {
-                    "step_id": step.id, "description": step.description,
-                }, source=self.id, task_id=plan.task_id)
+                await self.events.emit(
+                    EVENT_LEDGER_TASK_STARTED,
+                    {
+                        "step_id": step.id,
+                        "description": step.description,
+                    },
+                    source=self.id,
+                    task_id=plan.task_id,
+                )
 
             planner.mark_step(step.id, TaskStatus.IN_PROGRESS)
 
@@ -287,12 +305,22 @@ class DirectorAgent(BaseAgent):
             if self._ledger and self._wal:
                 if planner.get_step_status(step.id) == TaskStatus.VERIFIED:
                     artifact_hash = self._ledger.complete_task(step.id, artifact=artifact)
-                    self._wal.append(WAL_OP_COMPLETE_TASK, step.id, {
-                        "artifact_hash": artifact_hash,
-                    })
-                    await self.events.emit(EVENT_LEDGER_TASK_COMPLETED, {
-                        "step_id": step.id, "artifact_hash": artifact_hash[:16],
-                    }, source=self.id, task_id=plan.task_id)
+                    self._wal.append(
+                        WAL_OP_COMPLETE_TASK,
+                        step.id,
+                        {
+                            "artifact_hash": artifact_hash,
+                        },
+                    )
+                    await self.events.emit(
+                        EVENT_LEDGER_TASK_COMPLETED,
+                        {
+                            "step_id": step.id,
+                            "artifact_hash": artifact_hash[:16],
+                        },
+                        source=self.id,
+                        task_id=plan.task_id,
+                    )
 
                 # Update TODO.md on disk
                 todo_md = self._ledger.generate_todo_md()
@@ -317,9 +345,8 @@ class DirectorAgent(BaseAgent):
         for attempt in range(MAX_STEP_RETRIES + 1):
             # Ask LLM what to do for this step
             if attempt == 0:
-                prompt = (
-                    f"Execute step: {step.description}"
-                    + (f" [suggested tool: {step.tool}]" if step.tool else "")
+                prompt = f"Execute step: {step.description}" + (
+                    f" [suggested tool: {step.tool}]" if step.tool else ""
                 )
             else:
                 prompt = (
@@ -335,17 +362,29 @@ class DirectorAgent(BaseAgent):
             tool_name, tool_args = self._parse_tool_call(response.content)
 
             if tool_name and tool_name in self._tools:
-                await self.events.emit(EVENT_TOOL_CALLED, {
-                    "tool": tool_name, "args": tool_args, "step": step.description,
-                }, source=self.id, task_id=plan.task_id)
+                await self.events.emit(
+                    EVENT_TOOL_CALLED,
+                    {
+                        "tool": tool_name,
+                        "args": tool_args,
+                        "step": step.description,
+                    },
+                    source=self.id,
+                    task_id=plan.task_id,
+                )
 
                 tool_result = await self._tools[tool_name].execute(**tool_args)
 
-                await self.events.emit(EVENT_TOOL_RESULT, {
-                    "tool": tool_name,
-                    "success": tool_result.success,
-                    "output_preview": tool_result.output[:200],
-                }, source=self.id, task_id=plan.task_id)
+                await self.events.emit(
+                    EVENT_TOOL_RESULT,
+                    {
+                        "tool": tool_name,
+                        "success": tool_result.success,
+                        "output_preview": tool_result.output[:200],
+                    },
+                    source=self.id,
+                    task_id=plan.task_id,
+                )
 
                 # Feed result back to LLM
                 result_text = (
@@ -363,7 +402,11 @@ class DirectorAgent(BaseAgent):
                 conversation.append(LLMMessage(role="assistant", content=status_response.content))
 
                 if tool_result.success:
-                    return True, tool_result.output, f"✓ {step.description}: {tool_result.output[:200]}"
+                    return (
+                        True,
+                        tool_result.output,
+                        f"✓ {step.description}: {tool_result.output[:200]}",
+                    )
 
                 # Tool failed — retry if we have attempts left
                 if attempt < MAX_STEP_RETRIES:
@@ -411,11 +454,13 @@ class DirectorAgent(BaseAgent):
         """Convert plan steps into Milestone objects for DAG execution."""
         milestones: list[Milestone] = []
         for step in plan.steps:
-            milestones.append(Milestone(
-                id=step.id,
-                description=step.description,
-                dependencies=step.dependencies,
-            ))
+            milestones.append(
+                Milestone(
+                    id=step.id,
+                    description=step.description,
+                    dependencies=step.dependencies,
+                )
+            )
         return milestones
 
     async def review(self, result: Result) -> Result:
@@ -428,16 +473,24 @@ class DirectorAgent(BaseAgent):
 
         try:
             self._gates.gate_4_delivery()
-            await self.events.emit(EVENT_LEDGER_GATE_PASSED, {
-                "gate": "delivery",
-                "verified": self._ledger.verified_count,
-                "total": self._ledger.task_count,
-            }, source=self.id)
+            await self.events.emit(
+                EVENT_LEDGER_GATE_PASSED,
+                {
+                    "gate": "delivery",
+                    "verified": self._ledger.verified_count,
+                    "total": self._ledger.task_count,
+                },
+                source=self.id,
+            )
 
             self._gates.gate_5_reconciliation(self._ledger.task_count)
-            await self.events.emit(EVENT_LEDGER_GATE_PASSED, {
-                "gate": "reconciliation",
-            }, source=self.id)
+            await self.events.emit(
+                EVENT_LEDGER_GATE_PASSED,
+                {
+                    "gate": "reconciliation",
+                },
+                source=self.id,
+            )
 
             if self._wal:
                 self._wal.checkpoint()
@@ -447,9 +500,13 @@ class DirectorAgent(BaseAgent):
 
         except GateCheckError as exc:
             logger.error("director.gate_check_failed", error=str(exc))
-            await self.events.emit(EVENT_LEDGER_GATE_FAILED, {
-                "error": str(exc),
-            }, source=self.id)
+            await self.events.emit(
+                EVENT_LEDGER_GATE_FAILED,
+                {
+                    "error": str(exc),
+                },
+                source=self.id,
+            )
             return Result.fail(f"Delivery gate check failed: {exc}")
 
     def _parse_tool_call(self, text: str) -> tuple[str | None, dict]:

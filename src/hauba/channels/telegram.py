@@ -63,9 +63,7 @@ class TelegramChannel:
 
         self._app.add_handler(CommandHandler("start", self._handle_start))
         self._app.add_handler(CommandHandler("status", self._handle_status))
-        self._app.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
-        )
+        self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
 
         # Subscribe to events for progress updates
         self.events.on("task.completed", self._on_task_event)

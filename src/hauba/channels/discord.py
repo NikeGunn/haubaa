@@ -44,9 +44,7 @@ class DiscordChannel:
         command_prefix: str = "!",
     ) -> None:
         if not DISCORD_AVAILABLE:
-            raise DiscordChannelError(
-                "discord.py not installed. Run: pip install hauba[channels]"
-            )
+            raise DiscordChannelError("discord.py not installed. Run: pip install hauba[channels]")
 
         self.token = token
         self.events = events

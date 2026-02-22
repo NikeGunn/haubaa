@@ -144,7 +144,9 @@ class BrowserTool(BaseTool):
                     "--disable-dev-shm-usage",
                 ],
             )
-            logger.info("browser.context_created", session=self._session_name, headless=self._headless)
+            logger.info(
+                "browser.context_created", session=self._session_name, headless=self._headless
+            )
 
         # Get or create page
         pages = self._context.pages
@@ -220,9 +222,7 @@ class BrowserTool(BaseTool):
 
                 return result
             except ToolNotAvailableError as exc:
-                return ToolResult(
-                    tool_name=self.name, success=False, error=str(exc), exit_code=1
-                )
+                return ToolResult(tool_name=self.name, success=False, error=str(exc), exit_code=1)
             except Exception as exc:
                 last_error = str(exc)
                 logger.warning(
@@ -308,9 +308,7 @@ class BrowserTool(BaseTool):
         await page.click(selector, timeout=timeout)
         await self._wait_for_settle(page)
 
-        return ToolResult(
-            tool_name=self.name, success=True, output=f"Clicked: {selector}"
-        )
+        return ToolResult(tool_name=self.name, success=True, output=f"Clicked: {selector}")
 
     async def _type(self, page: Any, kwargs: dict[str, object]) -> ToolResult:
         selector = str(kwargs.get("selector", ""))
@@ -359,9 +357,7 @@ class BrowserTool(BaseTool):
                 output=f"No elements found for selector: {selector}",
             )
 
-        return ToolResult(
-            tool_name=self.name, success=True, output="\n".join(texts)
-        )
+        return ToolResult(tool_name=self.name, success=True, output="\n".join(texts))
 
     async def _screenshot(self, page: Any, kwargs: dict[str, object]) -> ToolResult:
         path_str = str(kwargs.get("path", ""))
@@ -373,9 +369,7 @@ class BrowserTool(BaseTool):
         path.parent.mkdir(parents=True, exist_ok=True)
         await page.screenshot(path=str(path), full_page=True)
 
-        return ToolResult(
-            tool_name=self.name, success=True, output=f"Screenshot saved: {path}"
-        )
+        return ToolResult(tool_name=self.name, success=True, output=f"Screenshot saved: {path}")
 
     async def _wait(self, page: Any, kwargs: dict[str, object]) -> ToolResult:
         selector = str(kwargs.get("selector", ""))
@@ -388,9 +382,7 @@ class BrowserTool(BaseTool):
             )
         else:
             await asyncio.sleep(timeout / 1000.0)
-            return ToolResult(
-                tool_name=self.name, success=True, output=f"Waited {timeout}ms"
-            )
+            return ToolResult(tool_name=self.name, success=True, output=f"Waited {timeout}ms")
 
     async def _scroll(self, page: Any, kwargs: dict[str, object]) -> ToolResult:
         direction = str(kwargs.get("direction", "down"))
@@ -413,13 +405,14 @@ class BrowserTool(BaseTool):
         script = str(kwargs.get("script", ""))
         if not script:
             return ToolResult(
-                tool_name=self.name, success=False, error="Script required for evaluate", exit_code=1
+                tool_name=self.name,
+                success=False,
+                error="Script required for evaluate",
+                exit_code=1,
             )
 
         result = await page.evaluate(script)
-        return ToolResult(
-            tool_name=self.name, success=True, output=str(result)[:5000]
-        )
+        return ToolResult(tool_name=self.name, success=True, output=str(result)[:5000])
 
     async def _wait_for_settle(self, page: Any, timeout_ms: int = 3000) -> None:
         """Wait for the page to settle — no new network requests or DOM mutations.

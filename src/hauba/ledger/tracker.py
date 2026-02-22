@@ -93,7 +93,9 @@ class TaskLedger:
     # ── Factory Methods ────────────────────────────────────────────────
 
     @classmethod
-    def from_plan(cls, plan_steps: list[dict[str, Any]], ledger_id: str, workspace: Path | None = None) -> TaskLedger:
+    def from_plan(
+        cls, plan_steps: list[dict[str, Any]], ledger_id: str, workspace: Path | None = None
+    ) -> TaskLedger:
         """Create a ledger from a deliberation plan's steps.
 
         Each step dict must have 'id' and 'description', optionally 'dependencies'.
@@ -131,7 +133,9 @@ class TaskLedger:
 
     # ── Core Operations ────────────────────────────────────────────────
 
-    def add_task(self, task_id: str, description: str, dependencies: list[str] | None = None) -> None:
+    def add_task(
+        self, task_id: str, description: str, dependencies: list[str] | None = None
+    ) -> None:
         """Add a new task to the ledger."""
         if task_id in self._task_index:
             raise LedgerError(f"Task {task_id} already exists in ledger")

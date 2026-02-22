@@ -42,9 +42,14 @@ def init() -> None:
     """Initialize Hauba — creates ~/.hauba/ and runs setup wizard."""
     from hauba.core.setup import ensure_hauba_dirs
 
-    console.print(Panel("[bold cyan]Hauba — AI Agent Operating System[/bold cyan]\n"
-                        "Setting up your AI engineering team...",
-                        title="Welcome", border_style="cyan"))
+    console.print(
+        Panel(
+            "[bold cyan]Hauba — AI Agent Operating System[/bold cyan]\n"
+            "Setting up your AI engineering team...",
+            title="Welcome",
+            border_style="cyan",
+        )
+    )
 
     # Create directory structure
     ensure_hauba_dirs()
@@ -81,7 +86,9 @@ def init() -> None:
                     second = api_key.find(prefix, len(prefix))
                     if second > 0:
                         api_key = api_key[:second]
-                        console.print("[yellow]Note: Detected duplicate paste — trimmed to single key.[/yellow]")
+                        console.print(
+                            "[yellow]Note: Detected duplicate paste — trimmed to single key.[/yellow]"
+                        )
                     break
         config.settings.llm.api_key = api_key
 
@@ -96,14 +103,16 @@ def init() -> None:
     config.save()
     console.print("[green]+[/green] Configuration saved to ~/.hauba/settings.json")
     console.print()
-    console.print(Panel(
-        f"[bold green]Hauba is ready![/bold green]\n\n"
-        f"  Owner: {name}\n"
-        f"  Provider: {provider}\n"
-        f"  Model: {config.settings.llm.model}\n\n"
-        f"  Run: [bold]hauba run \"build me a hello world app\"[/bold]",
-        border_style="green",
-    ))
+    console.print(
+        Panel(
+            f"[bold green]Hauba is ready![/bold green]\n\n"
+            f"  Owner: {name}\n"
+            f"  Provider: {provider}\n"
+            f"  Model: {config.settings.llm.model}\n\n"
+            f'  Run: [bold]hauba run "build me a hello world app"[/bold]',
+            border_style="green",
+        )
+    )
 
 
 @app.command()
@@ -138,13 +147,15 @@ def status() -> None:
     from hauba.core.config import ConfigManager
 
     config = ConfigManager()
-    console.print(Panel(
-        f"[bold]Owner:[/bold] {config.settings.owner_name}\n"
-        f"[bold]Provider:[/bold] {config.settings.llm.provider}\n"
-        f"[bold]Model:[/bold] {config.settings.llm.model}",
-        title="Hauba Status",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            f"[bold]Owner:[/bold] {config.settings.owner_name}\n"
+            f"[bold]Provider:[/bold] {config.settings.llm.provider}\n"
+            f"[bold]Model:[/bold] {config.settings.llm.model}",
+            title="Hauba Status",
+            border_style="blue",
+        )
+    )
 
 
 @app.command()
@@ -352,8 +363,10 @@ async def _compose_run(task: str, file: str) -> None:
     events = EventEmitter()
     ui = TerminalUI(console, events)
 
-    console.print(f"[bold cyan]Compose:[/bold cyan] Team '{compose_config.team}' "
-                  f"with {len(compose_config.agents)} agent(s)")
+    console.print(
+        f"[bold cyan]Compose:[/bold cyan] Team '{compose_config.team}' "
+        f"with {len(compose_config.agents)} agent(s)"
+    )
 
     runner = ComposeRunner(config=config, events=events, compose=compose_config)
     await ui.show_task_start(task)

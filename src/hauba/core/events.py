@@ -46,7 +46,7 @@ class EventEmitter:
         )
         self._history.append(event)
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
         handlers = self._handlers.get(topic, [])
         # Also fire wildcard handlers

@@ -38,18 +38,22 @@ REQUIRED_DIRS = [
 def ensure_hauba_dirs(base: Path | None = None) -> Path:
     """Create the ~/.hauba/ directory structure. Returns the base path."""
     home = base or HAUBA_HOME
-    dirs = REQUIRED_DIRS if base is None else [
-        home,
-        home / "agents",
-        home / "memory",
-        home / "memory" / "owner",
-        home / "memory" / "knowledge",
-        home / "memory" / "context",
-        home / "skills",
-        home / "strategies",
-        home / "logs",
-        home / "backups",
-    ]
+    dirs = (
+        REQUIRED_DIRS
+        if base is None
+        else [
+            home,
+            home / "agents",
+            home / "memory",
+            home / "memory" / "owner",
+            home / "memory" / "knowledge",
+            home / "memory" / "context",
+            home / "skills",
+            home / "strategies",
+            home / "logs",
+            home / "backups",
+        ]
+    )
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
     logger.info("setup.dirs_created", home=str(home))

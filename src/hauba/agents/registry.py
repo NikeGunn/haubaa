@@ -18,7 +18,9 @@ class AgentRecord:
 
     __slots__ = ("agent", "metadata", "parent_id", "spawned_at")
 
-    def __init__(self, agent: BaseAgent, parent_id: str = "", metadata: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, agent: BaseAgent, parent_id: str = "", metadata: dict[str, Any] | None = None
+    ) -> None:
         self.agent = agent
         self.spawned_at = time.time()
         self.parent_id = parent_id
@@ -34,11 +36,18 @@ class AgentRegistry:
     def __init__(self) -> None:
         self._agents: dict[str, AgentRecord] = {}
 
-    def register(self, agent: BaseAgent, parent_id: str = "", metadata: dict[str, Any] | None = None) -> str:
+    def register(
+        self, agent: BaseAgent, parent_id: str = "", metadata: dict[str, Any] | None = None
+    ) -> str:
         """Register an agent and return its ID."""
         record = AgentRecord(agent, parent_id, metadata)
         self._agents[agent.id] = record
-        logger.info("registry.registered", agent_id=agent.id, agent_type=agent.agent_type, parent_id=parent_id)
+        logger.info(
+            "registry.registered",
+            agent_id=agent.id,
+            agent_type=agent.agent_type,
+            parent_id=parent_id,
+        )
         return agent.id
 
     def unregister(self, agent_id: str) -> None:
@@ -97,8 +106,7 @@ class AgentRegistry:
         """Remove all terminated/completed/failed agents. Returns count removed."""
         terminal_states = {AgentState.COMPLETED, AgentState.FAILED, AgentState.TERMINATED}
         to_remove = [
-            aid for aid, record in self._agents.items()
-            if record.agent.state in terminal_states
+            aid for aid, record in self._agents.items() if record.agent.state in terminal_states
         ]
         for aid in to_remove:
             del self._agents[aid]

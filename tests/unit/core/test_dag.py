@@ -54,21 +54,25 @@ def test_get_ready_milestones(config: MagicMock, events: EventEmitter) -> None:
 
 def test_validate_dag_no_cycles(config: MagicMock, events: EventEmitter) -> None:
     dag = DAGExecutor(config, events)
-    dag.add_milestones([
-        Milestone(id="a", description="A"),
-        Milestone(id="b", description="B", dependencies=["a"]),
-        Milestone(id="c", description="C", dependencies=["b"]),
-    ])
+    dag.add_milestones(
+        [
+            Milestone(id="a", description="A"),
+            Milestone(id="b", description="B", dependencies=["a"]),
+            Milestone(id="c", description="C", dependencies=["b"]),
+        ]
+    )
     assert dag.validate_dag() is True
 
 
 def test_validate_dag_detects_cycle(config: MagicMock, events: EventEmitter) -> None:
     dag = DAGExecutor(config, events)
-    dag.add_milestones([
-        Milestone(id="a", description="A", dependencies=["c"]),
-        Milestone(id="b", description="B", dependencies=["a"]),
-        Milestone(id="c", description="C", dependencies=["b"]),
-    ])
+    dag.add_milestones(
+        [
+            Milestone(id="a", description="A", dependencies=["c"]),
+            Milestone(id="b", description="B", dependencies=["a"]),
+            Milestone(id="c", description="C", dependencies=["b"]),
+        ]
+    )
     assert dag.validate_dag() is False
 
 

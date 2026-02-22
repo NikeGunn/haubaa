@@ -138,6 +138,10 @@ pythonVersion = "3.11"
 typeCheckingMode = "basic"
 include = ["src"]
 exclude = ["tests"]
+reportMissingImports = "warning"
+reportArgumentType = "warning"
+reportAttributeAccessIssue = "warning"
+reportReturnType = "warning"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

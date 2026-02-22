@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 # Hauba — One-liner Installer
-# Usage: curl -sSL https://raw.githubusercontent.com/haubaai/hauba/main/install.sh | bash
+# Usage: curl -fsSL https://hauba.tech/install.sh | sh
 set -euo pipefail
 
 BOLD='\033[1m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 RED='\033[0;31m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 info()  { echo -e "${GREEN}[hauba]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[hauba]${NC} $1"; }
 error() { echo -e "${RED}[hauba]${NC} $1" >&2; }
 
-# Check Python 3.11+
+PYTHON=""
+
 check_python() {
     for cmd in python3 python; do
         if command -v "$cmd" &>/dev/null; then
@@ -33,29 +35,36 @@ check_python() {
 }
 
 main() {
-    echo -e "${BOLD}Hauba — AI Agent Operating System${NC}"
-    echo "Installing..."
-    echo
+    echo ""
+    echo -e "${CYAN}  _   _                 _           ${NC}"
+    echo -e "${CYAN} | | | |  __ _  _   _  | |__    __ _ ${NC}"
+    echo -e "${CYAN} | |_| | / _\` || | | | | '_ \\  / _\` |${NC}"
+    echo -e "${CYAN} |  _  || (_| || |_| | | |_) || (_| |${NC}"
+    echo -e "${CYAN} |_| |_| \\__,_| \\__,_| |_.__/  \\__,_|${NC}"
+    echo ""
+    echo -e "${BOLD}  AI Agent Operating System${NC}"
+    echo -e "  ${CYAN}https://hauba.tech${NC}"
+    echo ""
 
     check_python
-    info "Found $PYTHON ($($PYTHON --version))"
+    info "Found $PYTHON ($($PYTHON --version 2>&1))"
 
-    # Install via pip
     info "Installing hauba from PyPI..."
-    $PYTHON -m pip install --upgrade hauba
+    $PYTHON -m pip install --upgrade hauba 2>&1 | tail -1
 
-    # Verify installation
     if command -v hauba &>/dev/null; then
+        echo ""
         info "Installation complete!"
-        echo
+        echo ""
         echo -e "${BOLD}Get started:${NC}"
-        echo "  hauba init          # Set up your API key"
-        echo "  hauba run \"task\"     # Run your first task"
-        echo "  hauba doctor        # Check system health"
-        echo
+        echo -e "  ${GREEN}hauba init${NC}          # Set up your API key"
+        echo -e "  ${GREEN}hauba run \"task\"${NC}     # Run your first task"
+        echo -e "  ${GREEN}hauba doctor${NC}        # Check system health"
+        echo ""
     else
         warn "Installed but 'hauba' not found in PATH."
-        warn "You may need to add $($PYTHON -m site --user-base)/bin to your PATH."
+        warn "Try: $PYTHON -m hauba --help"
+        warn "Or add $($PYTHON -m site --user-base)/bin to your PATH."
     fi
 }
 

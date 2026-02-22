@@ -21,6 +21,7 @@ logger = structlog.get_logger()
 # Use yaml if available, otherwise fall back to basic parsing
 try:
     import yaml
+
     HAS_YAML = True
 except ImportError:
     HAS_YAML = False
@@ -55,24 +56,30 @@ class Strategy:
             tasks = []
             for i, task in enumerate(ms.get("tasks", []), 1):
                 if isinstance(task, str):
-                    tasks.append(TaskStep(
-                        id=f"{ms['id']}-task-{i}",
-                        description=task,
-                    ))
+                    tasks.append(
+                        TaskStep(
+                            id=f"{ms['id']}-task-{i}",
+                            description=task,
+                        )
+                    )
                 elif isinstance(task, dict):
-                    tasks.append(TaskStep(
-                        id=task.get("id", f"{ms['id']}-task-{i}"),
-                        description=task.get("description", str(task)),
-                        tool=task.get("tool"),
-                        dependencies=task.get("dependencies", []),
-                    ))
+                    tasks.append(
+                        TaskStep(
+                            id=task.get("id", f"{ms['id']}-task-{i}"),
+                            description=task.get("description", str(task)),
+                            tool=task.get("tool"),
+                            dependencies=task.get("dependencies", []),
+                        )
+                    )
 
-            result.append(Milestone(
-                id=ms.get("id", f"milestone-{len(result)+1}"),
-                description=ms.get("description", ""),
-                dependencies=ms.get("dependencies", []),
-                tasks=tasks,
-            ))
+            result.append(
+                Milestone(
+                    id=ms.get("id", f"milestone-{len(result) + 1}"),
+                    description=ms.get("description", ""),
+                    dependencies=ms.get("dependencies", []),
+                    tasks=tasks,
+                )
+            )
         return result
 
     def create_ledger(self, workspace: Path | None = None) -> TaskLedger:
@@ -80,11 +87,13 @@ class Strategy:
         milestones = self.to_milestone_objects()
         steps = []
         for ms in milestones:
-            steps.append({
-                "id": ms.id,
-                "description": ms.description,
-                "dependencies": ms.dependencies,
-            })
+            steps.append(
+                {
+                    "id": ms.id,
+                    "description": ms.description,
+                    "dependencies": ms.dependencies,
+                }
+            )
 
         ledger = TaskLedger.from_plan(steps, f"strategy-{self.name}", workspace)
         logger.info("strategy.ledger_created", strategy=self.name, tasks=len(steps))
@@ -188,11 +197,13 @@ class StrategyEngine:
         agents = []
         for agent_data in data.get("agents", []):
             if isinstance(agent_data, dict):
-                agents.append(AgentSpec(
-                    role=agent_data.get("role", "worker"),
-                    skills=agent_data.get("skills", []),
-                    model=agent_data.get("model", ""),
-                ))
+                agents.append(
+                    AgentSpec(
+                        role=agent_data.get("role", "worker"),
+                        skills=agent_data.get("skills", []),
+                        model=agent_data.get("model", ""),
+                    )
+                )
 
         strategy = Strategy(
             name=data.get("name", path.stem),

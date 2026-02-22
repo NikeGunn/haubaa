@@ -95,12 +95,15 @@ class TestComposeRunner:
         worker_a = next(m for m in milestones if m.id == "worker-a")
         assert worker_a.dependencies == []
 
-    def test_build_milestones_with_strategy(self, mock_config, events, compose_with_strategy, tmp_path):
+    def test_build_milestones_with_strategy(
+        self, mock_config, events, compose_with_strategy, tmp_path
+    ):
         """When a strategy is found, its milestones should be used."""
         strategy_dir = tmp_path / "strategies"
         strategy_dir.mkdir()
         strategy_yaml = strategy_dir / "saas-building.yaml"
-        strategy_yaml.write_text("""
+        strategy_yaml.write_text(
+            """
 name: saas-building
 description: "SaaS strategy"
 domain: saas
@@ -115,7 +118,9 @@ milestones:
     tasks:
       - "Task 2"
     dependencies: [m1]
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
 
         runner = ComposeRunner(config=mock_config, events=events, compose=compose_with_strategy)
         runner._strategy_engine._strategy_dirs = [strategy_dir]

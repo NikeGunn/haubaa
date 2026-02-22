@@ -48,20 +48,24 @@ MOCK_STATUS = """STATUS: done - File created successfully."""
 @pytest.fixture
 def config(tmp_path: Path) -> ConfigManager:
     settings_path = tmp_path / "settings.json"
-    settings_path.write_text(json.dumps({
-        "llm": {
-            "provider": "anthropic",
-            "model": "claude-sonnet-4-5-20250929",
-            "max_tokens": 4096,
-            "temperature": 0.7,
-            "api_key": "test-key",
-            "base_url": "",
-        },
-        "owner_name": "TestUser",
-        "data_dir": "",
-        "log_level": "INFO",
-        "think_time": 0.0,
-    }))
+    settings_path.write_text(
+        json.dumps(
+            {
+                "llm": {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-5-20250929",
+                    "max_tokens": 4096,
+                    "temperature": 0.7,
+                    "api_key": "test-key",
+                    "base_url": "",
+                },
+                "owner_name": "TestUser",
+                "data_dir": "",
+                "log_level": "INFO",
+                "think_time": 0.0,
+            }
+        )
+    )
     return ConfigManager(settings_path)
 
 
@@ -95,14 +99,16 @@ async def test_director_creates_ledger_and_tracks_steps(
         elif call_count == 2:
             return LLMResponse(
                 content=MOCK_TOOL_CALL_UTILS.format(path=str(work_dir)),
-                model="mock", tokens_used=50,
+                model="mock",
+                tokens_used=50,
             )
         elif call_count == 3:
             return LLMResponse(content=MOCK_STATUS, model="mock", tokens_used=20)
         elif call_count == 4:
             return LLMResponse(
                 content=MOCK_TOOL_CALL_MAIN.format(path=str(work_dir)),
-                model="mock", tokens_used=50,
+                model="mock",
+                tokens_used=50,
             )
         else:
             return LLMResponse(content=MOCK_STATUS, model="mock", tokens_used=20)
@@ -153,9 +159,7 @@ async def test_director_creates_ledger_and_tracks_steps(
 
 
 @pytest.mark.asyncio
-async def test_director_review_runs_gate_check(
-    config: ConfigManager, tmp_path: Path
-) -> None:
+async def test_director_review_runs_gate_check(config: ConfigManager, tmp_path: Path) -> None:
     """Test that Director's review phase runs Gate 4 and Gate 5."""
     events = EventEmitter()
     work_dir = tmp_path / "workspace"
@@ -181,11 +185,13 @@ async def test_director_review_runs_gate_check(
             if call_count == 2:
                 return LLMResponse(
                     content=MOCK_TOOL_CALL_UTILS.format(path=path_str),
-                    model="mock", tokens_used=50,
+                    model="mock",
+                    tokens_used=50,
                 )
             return LLMResponse(
                 content=MOCK_TOOL_CALL_MAIN.format(path=path_str),
-                model="mock", tokens_used=50,
+                model="mock",
+                tokens_used=50,
             )
         else:
             return LLMResponse(content=MOCK_STATUS, model="mock", tokens_used=20)

@@ -58,31 +58,37 @@ class TerminalUI:
     async def show_task_start(self, task: str) -> None:
         """Display task start banner."""
         self._console.print()
-        self._console.print(Panel(
-            f"[bold]{task}[/bold]",
-            title=f"[cyan]{_SYM_BULLET} Hauba[/cyan]",
-            border_style="cyan",
-            padding=(1, 2),
-        ))
+        self._console.print(
+            Panel(
+                f"[bold]{task}[/bold]",
+                title=f"[cyan]{_SYM_BULLET} Hauba[/cyan]",
+                border_style="cyan",
+                padding=(1, 2),
+            )
+        )
         self._console.print()
 
     async def show_task_result(self, result: Result) -> None:
         """Display final task result."""
         self._console.print()
         if result.success:
-            self._console.print(Panel(
-                str(result.value or "Task completed successfully."),
-                title=f"[green]{_SYM_CHECK} Task Complete[/green]",
-                border_style="green",
-                padding=(1, 2),
-            ))
+            self._console.print(
+                Panel(
+                    str(result.value or "Task completed successfully."),
+                    title=f"[green]{_SYM_CHECK} Task Complete[/green]",
+                    border_style="green",
+                    padding=(1, 2),
+                )
+            )
         else:
-            self._console.print(Panel(
-                str(result.error or "Task failed."),
-                title=f"[red]{_SYM_CROSS} Task Failed[/red]",
-                border_style="red",
-                padding=(1, 2),
-            ))
+            self._console.print(
+                Panel(
+                    str(result.error or "Task failed."),
+                    title=f"[red]{_SYM_CROSS} Task Failed[/red]",
+                    border_style="red",
+                    padding=(1, 2),
+                )
+            )
         self._console.print()
 
     # --- Event Handlers ---
@@ -105,7 +111,9 @@ class TerminalUI:
         # Claude Code style: show tool name and what it's doing
         if tool == "bash":
             cmd = args.get("command", "")
-            self._console.print(f"  [bold yellow]{_SYM_BOLT} bash[/bold yellow] [dim]{cmd[:120]}[/dim]")
+            self._console.print(
+                f"  [bold yellow]{_SYM_BOLT} bash[/bold yellow] [dim]{cmd[:120]}[/dim]"
+            )
         elif tool == "files":
             action = args.get("action", "")
             path = args.get("path", "")
@@ -128,7 +136,7 @@ class TerminalUI:
                 for line in lines[:5]:
                     self._console.print(f"  [dim]  {line}[/dim]")
                 if len(lines) > 5:
-                    self._console.print(f"  [dim]  ... ({len(lines)-5} more lines)[/dim]")
+                    self._console.print(f"  [dim]  ... ({len(lines) - 5} more lines)[/dim]")
         else:
             self._console.print(f"  [red]  {_SYM_CROSS} {tool} failed[/red]")
 

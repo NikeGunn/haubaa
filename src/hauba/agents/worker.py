@@ -117,20 +117,30 @@ class Worker(BaseAgent):
         tool_name, tool_args = self._parse_tool_call(response.content)
 
         if tool_name and tool_name in self._tools:
-            await self.events.emit(EVENT_TOOL_CALLED, {
-                "tool": tool_name,
-                "args": tool_args,
-                "worker_id": self.id,
-                "step": step.description,
-            }, source=self.id, task_id=task_id)
+            await self.events.emit(
+                EVENT_TOOL_CALLED,
+                {
+                    "tool": tool_name,
+                    "args": tool_args,
+                    "worker_id": self.id,
+                    "step": step.description,
+                },
+                source=self.id,
+                task_id=task_id,
+            )
 
             tool_result = await self._tools[tool_name].execute(**tool_args)
 
-            await self.events.emit(EVENT_TOOL_RESULT, {
-                "tool": tool_name,
-                "success": tool_result.success,
-                "output_preview": tool_result.output[:200],
-            }, source=self.id, task_id=task_id)
+            await self.events.emit(
+                EVENT_TOOL_RESULT,
+                {
+                    "tool": tool_name,
+                    "success": tool_result.success,
+                    "output_preview": tool_result.output[:200],
+                },
+                source=self.id,
+                task_id=task_id,
+            )
 
             output = tool_result.output if tool_result.success else tool_result.error
             success = tool_result.success
@@ -140,12 +150,17 @@ class Worker(BaseAgent):
             success = True
 
         # Emit worker result
-        await self.events.emit(EVENT_WORKER_RESULT, {
-            "worker_id": self.id,
-            "parent_id": self.parent_id,
-            "task": step.description,
-            "success": success,
-        }, source=self.id, task_id=task_id)
+        await self.events.emit(
+            EVENT_WORKER_RESULT,
+            {
+                "worker_id": self.id,
+                "parent_id": self.parent_id,
+                "task": step.description,
+                "success": success,
+            },
+            source=self.id,
+            task_id=task_id,
+        )
 
         return Result.ok(output) if success else Result.fail(output)
 

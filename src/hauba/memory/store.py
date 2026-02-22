@@ -140,8 +140,12 @@ class MemoryStore:
             rows = await cursor.fetchall()
             return [
                 {
-                    "task_id": r[0], "instruction": r[1], "status": r[2],
-                    "result": r[3], "created_at": r[4], "completed_at": r[5],
+                    "task_id": r[0],
+                    "instruction": r[1],
+                    "status": r[2],
+                    "result": r[3],
+                    "created_at": r[4],
+                    "completed_at": r[5],
                 }
                 for r in rows
             ]

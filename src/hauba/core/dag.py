@@ -90,8 +90,7 @@ class DAGExecutor:
                     break
                 # Deadlock — dependencies can never be satisfied
                 not_started = [
-                    m.id for m in self._milestones.values()
-                    if m.status == TaskStatus.NOT_STARTED
+                    m.id for m in self._milestones.values() if m.status == TaskStatus.NOT_STARTED
                 ]
                 if not_started:
                     logger.error("dag.deadlock", blocked=not_started)

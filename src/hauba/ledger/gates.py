@@ -31,9 +31,7 @@ class VerificationGates:
         Raises GateCheckError if ledger is empty.
         """
         if self._ledger.task_count == 0:
-            raise GateCheckError(
-                "Gate 1 FAILED: Ledger has no tasks — cannot begin execution"
-            )
+            raise GateCheckError("Gate 1 FAILED: Ledger has no tasks — cannot begin execution")
         logger.debug("gate.1_passed", ledger_id=self._ledger.ledger_id)
         return True
 
@@ -63,9 +61,7 @@ class VerificationGates:
         """
         state = self._ledger.get_state(task_id)
         if state != LedgerState.VERIFIED:
-            raise GateCheckError(
-                f"Gate 3 FAILED: Task {task_id} not verified (state={state.name})"
-            )
+            raise GateCheckError(f"Gate 3 FAILED: Task {task_id} not verified (state={state.name})")
 
         if artifact_path and not artifact_path.exists():
             raise GateCheckError(

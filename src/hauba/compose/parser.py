@@ -40,9 +40,7 @@ def parse_compose_file(path: Path) -> ComposeConfig:
         raise ComposeError(f"Cannot read compose file: {exc}") from exc
 
     if not HAS_YAML:
-        raise ComposeError(
-            "PyYAML is required for compose files. Install with: pip install pyyaml"
-        )
+        raise ComposeError("PyYAML is required for compose files. Install with: pip install pyyaml")
 
     try:
         data = yaml.safe_load(content)  # type: ignore[possibly-undefined]
@@ -62,7 +60,9 @@ def _build_config(data: dict) -> ComposeConfig:
 
     # Parse settings
     settings_data = data.get("settings", {})
-    settings = ComposeSettings(**settings_data) if isinstance(settings_data, dict) else ComposeSettings()
+    settings = (
+        ComposeSettings(**settings_data) if isinstance(settings_data, dict) else ComposeSettings()
+    )
 
     # Parse agents
     agents: dict[str, ComposeAgentConfig] = {}
@@ -81,9 +81,7 @@ def _build_config(data: dict) -> ComposeConfig:
     for name, agent in agents.items():
         for dep in agent.depends_on:
             if dep not in agents:
-                raise ComposeError(
-                    f"Agent '{name}' depends on '{dep}' which is not defined"
-                )
+                raise ComposeError(f"Agent '{name}' depends on '{dep}' which is not defined")
 
     # Check for circular dependencies
     _check_circular_deps(agents)

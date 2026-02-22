@@ -40,7 +40,7 @@ class SkillMatcher:
             return []
 
         # Extract keywords from task
-        task_words = set(w.lower() for w in re.findall(r'\w+', task_description) if len(w) > 3)
+        task_words = set(w.lower() for w in re.findall(r"\w+", task_description) if len(w) > 3)
 
         matches: list[SkillMatch] = []
         for skill in skills.values():
@@ -56,17 +56,19 @@ class SkillMatcher:
             score = len(overlap) / max(len(task_words), 1)
             # Boost score for "when_to_use" matches
             for trigger in skill.when_to_use:
-                trigger_words = set(w.lower() for w in re.findall(r'\w+', trigger) if len(w) > 3)
+                trigger_words = set(w.lower() for w in re.findall(r"\w+", trigger) if len(w) > 3)
                 trigger_overlap = task_words & trigger_words
                 if trigger_overlap:
                     score += 0.2 * (len(trigger_overlap) / max(len(trigger_words), 1))
 
             score = min(1.0, score)
-            matches.append(SkillMatch(
-                skill=skill,
-                score=score,
-                matched_keywords=sorted(overlap),
-            ))
+            matches.append(
+                SkillMatch(
+                    skill=skill,
+                    score=score,
+                    matched_keywords=sorted(overlap),
+                )
+            )
 
         # Sort by score descending
         matches.sort(key=lambda m: m.score, reverse=True)

@@ -99,9 +99,7 @@ class ScreenTool(BaseTool):
             self._check_available()
             self._check_emergency_stop()
         except (ToolNotAvailableError, ScreenControlError) as exc:
-            return ToolResult(
-                tool_name=self.name, success=False, error=str(exc), exit_code=1
-            )
+            return ToolResult(tool_name=self.name, success=False, error=str(exc), exit_code=1)
 
         try:
             if action == ScreenAction.CAPTURE:
@@ -122,14 +120,10 @@ class ScreenTool(BaseTool):
                     exit_code=1,
                 )
         except ScreenControlError as exc:
-            return ToolResult(
-                tool_name=self.name, success=False, error=str(exc), exit_code=1
-            )
+            return ToolResult(tool_name=self.name, success=False, error=str(exc), exit_code=1)
         except Exception as exc:
             logger.error("screen.action_failed", action=action_str, error=str(exc))
-            return ToolResult(
-                tool_name=self.name, success=False, error=str(exc), exit_code=1
-            )
+            return ToolResult(tool_name=self.name, success=False, error=str(exc), exit_code=1)
 
     async def _capture(self, kwargs: dict[str, object]) -> ToolResult:
         """Capture a screenshot. Always allowed."""
@@ -146,9 +140,7 @@ class ScreenTool(BaseTool):
         screenshot = pyautogui.screenshot()
         screenshot.save(str(path))
         logger.info("screen.captured", path=str(path))
-        return ToolResult(
-            tool_name=self.name, success=True, output=f"Screenshot saved: {path}"
-        )
+        return ToolResult(tool_name=self.name, success=True, output=f"Screenshot saved: {path}")
 
     async def _click(self, kwargs: dict[str, object]) -> ToolResult:
         self._check_control_allowed()
@@ -172,9 +164,7 @@ class ScreenTool(BaseTool):
         interval = float(kwargs.get("interval", 0.02))
         pyautogui.typewrite(text, interval=interval)
         logger.info("screen.typed", length=len(text))
-        return ToolResult(
-            tool_name=self.name, success=True, output=f"Typed {len(text)} characters"
-        )
+        return ToolResult(tool_name=self.name, success=True, output=f"Typed {len(text)} characters")
 
     async def _scroll(self, kwargs: dict[str, object]) -> ToolResult:
         self._check_control_allowed()
@@ -186,9 +176,7 @@ class ScreenTool(BaseTool):
         else:
             pyautogui.scroll(clicks)
         logger.info("screen.scrolled", clicks=clicks)
-        return ToolResult(
-            tool_name=self.name, success=True, output=f"Scrolled {clicks} clicks"
-        )
+        return ToolResult(tool_name=self.name, success=True, output=f"Scrolled {clicks} clicks")
 
     async def _hotkey(self, kwargs: dict[str, object]) -> ToolResult:
         self._check_control_allowed()
@@ -203,6 +191,4 @@ class ScreenTool(BaseTool):
         keys = [k.strip() for k in keys_str.split(",")]
         pyautogui.hotkey(*keys)
         logger.info("screen.hotkey", keys=keys)
-        return ToolResult(
-            tool_name=self.name, success=True, output=f"Hotkey: {'+'.join(keys)}"
-        )
+        return ToolResult(tool_name=self.name, success=True, output=f"Hotkey: {'+'.join(keys)}")

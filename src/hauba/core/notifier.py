@@ -100,7 +100,7 @@ class Notifier:
         """
         self._history.append(notification)
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
         sent = 0
         for sink in self._sinks:

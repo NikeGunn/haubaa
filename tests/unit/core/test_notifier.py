@@ -103,9 +103,7 @@ async def test_task_completed_generates_notification(
     assert notification.title == "Task Completed"
 
 
-async def test_task_failed_generates_notification(
-    events: EventEmitter, notifier: Notifier
-) -> None:
+async def test_task_failed_generates_notification(events: EventEmitter, notifier: Notifier) -> None:
     sink = AsyncMock()
     notifier.add_sink(sink)
 
@@ -115,9 +113,7 @@ async def test_task_failed_generates_notification(
     assert "timeout" in notification.body
 
 
-async def test_milestone_completed_notification(
-    events: EventEmitter, notifier: Notifier
-) -> None:
+async def test_milestone_completed_notification(events: EventEmitter, notifier: Notifier) -> None:
     sink = AsyncMock()
     notifier.add_sink(sink)
 
@@ -126,9 +122,7 @@ async def test_milestone_completed_notification(
     assert notification.level == NotificationLevel.MILESTONE
 
 
-async def test_gate_failed_notification(
-    events: EventEmitter, notifier: Notifier
-) -> None:
+async def test_gate_failed_notification(events: EventEmitter, notifier: Notifier) -> None:
     sink = AsyncMock()
     notifier.add_sink(sink)
 

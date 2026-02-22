@@ -33,7 +33,8 @@ class FileTool(BaseTool):
 
         if not action or not path_str:
             return ToolResult(
-                tool_name=self.name, success=False,
+                tool_name=self.name,
+                success=False,
                 error="Both 'action' and 'path' are required",
             )
 
@@ -58,7 +59,8 @@ class FileTool(BaseTool):
                 return await self._delete(path)
             else:
                 return ToolResult(
-                    tool_name=self.name, success=False,
+                    tool_name=self.name,
+                    success=False,
                     error=f"Unknown action: {action}",
                 )
         except OSError as exc:
@@ -112,5 +114,6 @@ class FileTool(BaseTool):
             path.unlink()
         else:
             import shutil
+
             shutil.rmtree(path)
         return ToolResult(tool_name=self.name, success=True, output=f"Deleted: {path}")

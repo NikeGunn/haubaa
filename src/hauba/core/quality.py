@@ -68,7 +68,8 @@ class QualityReport:
         weighted_sum = sum(g.score * weights.get(g.gate, 0.1) for g in self.gates)
         self.overall_score = weighted_sum / total_weight if total_weight > 0 else 0.0
         self.passed = self.overall_score >= 0.6 and all(
-            g.passed for g in self.gates
+            g.passed
+            for g in self.gates
             if g.gate in (QualityGateType.SECURITY, QualityGateType.TEST)
         )
 
@@ -121,11 +122,14 @@ class QualityGateEngine:
 
         if self._events:
             event_type = EVENT_QUALITY_PASSED if report.passed else EVENT_QUALITY_FAILED
-            await self._events.emit(event_type, {
-                "overall_score": report.overall_score,
-                "passed": report.passed,
-                "gates": len(report.gates),
-            })
+            await self._events.emit(
+                event_type,
+                {
+                    "overall_score": report.overall_score,
+                    "passed": report.passed,
+                    "gates": len(report.gates),
+                },
+            )
 
         return report
 
@@ -135,7 +139,9 @@ class QualityGateEngine:
         result = await self._bash.execute(command=f"ruff check {target} --output-format=text 2>&1")
 
         if result.success and ("All checks passed" in result.output or not result.output.strip()):
-            return GateResult(QualityGateType.LINT, passed=True, score=1.0, details="No lint issues")
+            return GateResult(
+                QualityGateType.LINT, passed=True, score=1.0, details="No lint issues"
+            )
 
         # Count errors
         error_lines = [line for line in result.output.split("\n") if line.strip() and ":" in line]
@@ -156,12 +162,16 @@ class QualityGateEngine:
         result = await self._bash.execute(command=f"pyright {target} 2>&1")
 
         if result.success:
-            return GateResult(QualityGateType.TYPE_CHECK, passed=True, score=1.0, details="No type errors")
+            return GateResult(
+                QualityGateType.TYPE_CHECK, passed=True, score=1.0, details="No type errors"
+            )
 
         # Fall back to mypy
         result = await self._bash.execute(command=f"mypy {target} --ignore-missing-imports 2>&1")
         if result.success:
-            return GateResult(QualityGateType.TYPE_CHECK, passed=True, score=1.0, details="No type errors (mypy)")
+            return GateResult(
+                QualityGateType.TYPE_CHECK, passed=True, score=1.0, details="No type errors (mypy)"
+            )
 
         error_lines = [line for line in result.output.split("\n") if "error:" in line.lower()]
         score = max(0.0, 1.0 - (len(error_lines) * 0.1))
@@ -185,7 +195,9 @@ class QualityGateEngine:
             for line in result.output.split("\n"):
                 if "passed" in line:
                     return GateResult(
-                        QualityGateType.TEST, passed=True, score=1.0,
+                        QualityGateType.TEST,
+                        passed=True,
+                        score=1.0,
                         details=line.strip(),
                     )
             return GateResult(QualityGateType.TEST, passed=True, score=1.0, details="Tests passed")
@@ -194,7 +206,9 @@ class QualityGateEngine:
         for line in result.output.split("\n"):
             if "failed" in line.lower():
                 return GateResult(
-                    QualityGateType.TEST, passed=False, score=0.0,
+                    QualityGateType.TEST,
+                    passed=False,
+                    score=0.0,
                     details=line.strip(),
                     errors=[result.output[-500:]],
                 )
@@ -222,7 +236,9 @@ class QualityGateEngine:
                     findings.append(f"{filepath.name}: {pattern_name} ({len(matches)} match(es))")
 
         if not findings:
-            return GateResult(QualityGateType.SECURITY, passed=True, score=1.0, details="No security issues")
+            return GateResult(
+                QualityGateType.SECURITY, passed=True, score=1.0, details="No security issues"
+            )
 
         score = max(0.0, 1.0 - (len(findings) * 0.2))
         return GateResult(
@@ -237,7 +253,9 @@ class QualityGateEngine:
         """LLM self-reviews its own output for quality."""
         if not llm_router:
             return GateResult(
-                QualityGateType.SELF_REVIEW, passed=True, score=0.7,
+                QualityGateType.SELF_REVIEW,
+                passed=True,
+                score=0.7,
                 details="Skipped (no LLM available)",
             )
 
@@ -247,7 +265,7 @@ class QualityGateEngine:
             LLMMessage(
                 role="system",
                 content="Review this code for correctness, best practices, and potential issues. "
-                        "Respond with SCORE: <0.0-1.0> and ISSUES: <comma-separated list or 'none'>",
+                "Respond with SCORE: <0.0-1.0> and ISSUES: <comma-separated list or 'none'>",
             ),
             LLMMessage(role="user", content=f"Review this code:\n\n{code[:3000]}"),
         ]

@@ -146,9 +146,7 @@ class ComputerUseAgent(BaseAgent):
             # 7. Delay between actions
             await asyncio.sleep(self._delay)
 
-        return Result.fail(
-            f"Max iterations ({self._max_iterations}) reached without completion"
-        )
+        return Result.fail(f"Max iterations ({self._max_iterations}) reached without completion")
 
     async def _execute_action(self, action_data: dict, task_id: str) -> object:
         """Execute a single action from the LLM response."""

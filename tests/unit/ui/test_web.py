@@ -31,11 +31,13 @@ def test_web_ui_creates_app() -> None:
     mock_app.post = MagicMock(return_value=lambda f: f)
     mock_app.websocket = MagicMock(return_value=lambda f: f)
 
-    with patch("hauba.ui.web.FASTAPI_AVAILABLE", True), \
-         patch("hauba.ui.web.FastAPI", mock_fastapi, create=True), \
-         patch("hauba.ui.web.HTMLResponse", MagicMock(), create=True), \
-         patch("hauba.ui.web.WebSocket", MagicMock(), create=True), \
-         patch("hauba.ui.web.WebSocketDisconnect", Exception, create=True):
+    with (
+        patch("hauba.ui.web.FASTAPI_AVAILABLE", True),
+        patch("hauba.ui.web.FastAPI", mock_fastapi, create=True),
+        patch("hauba.ui.web.HTMLResponse", MagicMock(), create=True),
+        patch("hauba.ui.web.WebSocket", MagicMock(), create=True),
+        patch("hauba.ui.web.WebSocketDisconnect", Exception, create=True),
+    ):
         from hauba.ui.web import WebUI
 
         events = EventEmitter()
@@ -54,11 +56,13 @@ async def test_broadcast_event_to_connections() -> None:
     mock_app.post = MagicMock(return_value=lambda f: f)
     mock_app.websocket = MagicMock(return_value=lambda f: f)
 
-    with patch("hauba.ui.web.FASTAPI_AVAILABLE", True), \
-         patch("hauba.ui.web.FastAPI", mock_fastapi, create=True), \
-         patch("hauba.ui.web.HTMLResponse", MagicMock(), create=True), \
-         patch("hauba.ui.web.WebSocket", MagicMock(), create=True), \
-         patch("hauba.ui.web.WebSocketDisconnect", Exception, create=True):
+    with (
+        patch("hauba.ui.web.FASTAPI_AVAILABLE", True),
+        patch("hauba.ui.web.FastAPI", mock_fastapi, create=True),
+        patch("hauba.ui.web.HTMLResponse", MagicMock(), create=True),
+        patch("hauba.ui.web.WebSocket", MagicMock(), create=True),
+        patch("hauba.ui.web.WebSocketDisconnect", Exception, create=True),
+    ):
         from hauba.ui.web import WebUI
 
         events = EventEmitter()
@@ -84,11 +88,13 @@ async def test_broadcast_removes_disconnected() -> None:
     mock_app.post = MagicMock(return_value=lambda f: f)
     mock_app.websocket = MagicMock(return_value=lambda f: f)
 
-    with patch("hauba.ui.web.FASTAPI_AVAILABLE", True), \
-         patch("hauba.ui.web.FastAPI", mock_fastapi, create=True), \
-         patch("hauba.ui.web.HTMLResponse", MagicMock(), create=True), \
-         patch("hauba.ui.web.WebSocket", MagicMock(), create=True), \
-         patch("hauba.ui.web.WebSocketDisconnect", Exception, create=True):
+    with (
+        patch("hauba.ui.web.FASTAPI_AVAILABLE", True),
+        patch("hauba.ui.web.FastAPI", mock_fastapi, create=True),
+        patch("hauba.ui.web.HTMLResponse", MagicMock(), create=True),
+        patch("hauba.ui.web.WebSocket", MagicMock(), create=True),
+        patch("hauba.ui.web.WebSocketDisconnect", Exception, create=True),
+    ):
         from hauba.ui.web import WebUI
 
         events = EventEmitter()
@@ -115,11 +121,13 @@ def test_dashboard_html_returns_valid_html() -> None:
     mock_app.post = MagicMock(return_value=lambda f: f)
     mock_app.websocket = MagicMock(return_value=lambda f: f)
 
-    with patch("hauba.ui.web.FASTAPI_AVAILABLE", True), \
-         patch("hauba.ui.web.FastAPI", mock_fastapi, create=True), \
-         patch("hauba.ui.web.HTMLResponse", MagicMock(), create=True), \
-         patch("hauba.ui.web.WebSocket", MagicMock(), create=True), \
-         patch("hauba.ui.web.WebSocketDisconnect", Exception, create=True):
+    with (
+        patch("hauba.ui.web.FASTAPI_AVAILABLE", True),
+        patch("hauba.ui.web.FastAPI", mock_fastapi, create=True),
+        patch("hauba.ui.web.HTMLResponse", MagicMock(), create=True),
+        patch("hauba.ui.web.WebSocket", MagicMock(), create=True),
+        patch("hauba.ui.web.WebSocketDisconnect", Exception, create=True),
+    ):
         from hauba.ui.web import WebUI
 
         events = EventEmitter()

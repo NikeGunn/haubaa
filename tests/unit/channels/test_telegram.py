@@ -29,11 +29,13 @@ def test_telegram_channel_creates_with_mock_deps() -> None:
     mock_app = MagicMock()
     mock_app_builder.token.return_value.build.return_value = mock_app
 
-    with patch("hauba.channels.telegram.TELEGRAM_AVAILABLE", True), \
-         patch("hauba.channels.telegram.Application", create=True), \
-         patch("hauba.channels.telegram.CommandHandler", create=True), \
-         patch("hauba.channels.telegram.MessageHandler", create=True), \
-         patch("hauba.channels.telegram.filters", create=True):
+    with (
+        patch("hauba.channels.telegram.TELEGRAM_AVAILABLE", True),
+        patch("hauba.channels.telegram.Application", create=True),
+        patch("hauba.channels.telegram.CommandHandler", create=True),
+        patch("hauba.channels.telegram.MessageHandler", create=True),
+        patch("hauba.channels.telegram.filters", create=True),
+    ):
         events = EventEmitter()
         from hauba.channels.telegram import TelegramChannel
 
@@ -49,11 +51,13 @@ async def test_telegram_on_task_event_broadcasts() -> None:
     from hauba.channels.telegram import TelegramChannel
     from hauba.core.types import Event
 
-    with patch("hauba.channels.telegram.TELEGRAM_AVAILABLE", True), \
-         patch("hauba.channels.telegram.Application", create=True), \
-         patch("hauba.channels.telegram.CommandHandler", create=True), \
-         patch("hauba.channels.telegram.MessageHandler", create=True), \
-         patch("hauba.channels.telegram.filters", create=True):
+    with (
+        patch("hauba.channels.telegram.TELEGRAM_AVAILABLE", True),
+        patch("hauba.channels.telegram.Application", create=True),
+        patch("hauba.channels.telegram.CommandHandler", create=True),
+        patch("hauba.channels.telegram.MessageHandler", create=True),
+        patch("hauba.channels.telegram.filters", create=True),
+    ):
         events = EventEmitter()
         channel = TelegramChannel(token="t", events=events)
         channel.broadcast = AsyncMock()

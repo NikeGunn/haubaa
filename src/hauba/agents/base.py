@@ -37,51 +37,83 @@ class BaseAgent(ABC):
         """Full agent lifecycle: deliberate → execute → review."""
         task_id = f"task-{uuid.uuid4().hex[:8]}"
 
-        await self.events.emit(EVENT_TASK_STARTED, {
-            "task_id": task_id,
-            "agent_id": self.id,
-            "instruction": instruction,
-        }, source=self.id, task_id=task_id)
+        await self.events.emit(
+            EVENT_TASK_STARTED,
+            {
+                "task_id": task_id,
+                "agent_id": self.id,
+                "instruction": instruction,
+            },
+            source=self.id,
+            task_id=task_id,
+        )
 
         try:
             # Phase 1: Deliberate
             self.state = AgentState.DELIBERATING
-            await self.events.emit(EVENT_AGENT_THINKING, {
-                "agent_id": self.id, "phase": "deliberating",
-            }, source=self.id, task_id=task_id)
+            await self.events.emit(
+                EVENT_AGENT_THINKING,
+                {
+                    "agent_id": self.id,
+                    "phase": "deliberating",
+                },
+                source=self.id,
+                task_id=task_id,
+            )
 
             plan = await self.deliberate(instruction, task_id)
 
             # Phase 2: Execute
             self.state = AgentState.EXECUTING
-            await self.events.emit(EVENT_AGENT_EXECUTING, {
-                "agent_id": self.id, "steps": len(plan.steps),
-            }, source=self.id, task_id=task_id)
+            await self.events.emit(
+                EVENT_AGENT_EXECUTING,
+                {
+                    "agent_id": self.id,
+                    "steps": len(plan.steps),
+                },
+                source=self.id,
+                task_id=task_id,
+            )
 
             result = await self.execute(plan)
 
             # Phase 3: Review
             self.state = AgentState.REVIEWING
-            await self.events.emit(EVENT_AGENT_REVIEWING, {
-                "agent_id": self.id,
-            }, source=self.id, task_id=task_id)
+            await self.events.emit(
+                EVENT_AGENT_REVIEWING,
+                {
+                    "agent_id": self.id,
+                },
+                source=self.id,
+                task_id=task_id,
+            )
 
             final = await self.review(result)
 
             self.state = AgentState.COMPLETED
-            await self.events.emit(EVENT_TASK_COMPLETED, {
-                "task_id": task_id,
-                "success": final.success,
-            }, source=self.id, task_id=task_id)
+            await self.events.emit(
+                EVENT_TASK_COMPLETED,
+                {
+                    "task_id": task_id,
+                    "success": final.success,
+                },
+                source=self.id,
+                task_id=task_id,
+            )
 
             return final
 
         except Exception as exc:
             self.state = AgentState.FAILED
-            await self.events.emit(EVENT_TASK_FAILED, {
-                "task_id": task_id,
-                "error": str(exc),
-            }, source=self.id, task_id=task_id)
+            await self.events.emit(
+                EVENT_TASK_FAILED,
+                {
+                    "task_id": task_id,
+                    "error": str(exc),
+                },
+                source=self.id,
+                task_id=task_id,
+            )
             logger.exception("agent.failed", agent_id=self.id, task_id=task_id)
             return Result.fail(str(exc))
 

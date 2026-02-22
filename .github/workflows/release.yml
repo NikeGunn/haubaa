@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -38,6 +40,7 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12"]
@@ -75,12 +78,65 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Get release date
+        id: date
+        run: echo "DATE=$(date -u +'%B %d, %Y')" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREV_TAG=$(git tag --sort=-version:refname | head -2 | tail -1)
+          if [ "$PREV_TAG" = "${GITHUB_REF#refs/tags/}" ] || [ -z "$PREV_TAG" ]; then
+            # First release — get all commits
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            COMMITS=$(git log "${PREV_TAG}..${GITHUB_REF#refs/tags/}" --pretty=format:"- %s (%h)" --no-merges)
+          fi
+
+          # Categorize commits
+          FEATURES=$(echo "$COMMITS" | grep -i "^- feat" || true)
+          FIXES=$(echo "$COMMITS" | grep -i "^- fix" || true)
+          REFACTORS=$(echo "$COMMITS" | grep -iE "^- (refactor|chore|docs|test|ci)" || true)
+          OTHER=$(echo "$COMMITS" | grep -ivE "^- (feat|fix|refactor|chore|docs|test|ci)" || true)
+
+          {
+            echo "CHANGELOG<<CHANGELOG_EOF"
+            if [ -n "$FEATURES" ]; then
+              echo "### ✨ New Features"
+              echo "$FEATURES"
+              echo ""
+            fi
+            if [ -n "$FIXES" ]; then
+              echo "### 🐛 Bug Fixes"
+              echo "$FIXES"
+              echo ""
+            fi
+            if [ -n "$REFACTORS" ]; then
+              echo "### 🔧 Maintenance"
+              echo "$REFACTORS"
+              echo ""
+            fi
+            if [ -n "$OTHER" ]; then
+              echo "### 📦 Other Changes"
+              echo "$OTHER"
+              echo ""
+            fi
+            echo "CHANGELOG_EOF"
+          } >> $GITHUB_OUTPUT
 
       - name: Generate checksums
         run: |
@@ -90,7 +146,39 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          name: "Hauba v${{ steps.version.outputs.VERSION }} — ${{ steps.date.outputs.DATE }}"
+          body: |
+            # Hauba v${{ steps.version.outputs.VERSION }}
+
+            **Released:** ${{ steps.date.outputs.DATE }}
+
+            ## What's Changed
+
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ## Installation
+
+            ```bash
+            pip install hauba==${{ steps.version.outputs.VERSION }}
+            ```
+
+            Or use the one-liner:
+            ```bash
+            curl -fsSL https://hauba.tech/install.sh | sh
+            ```
+
+            **Windows (PowerShell):**
+            ```powershell
+            irm hauba.tech/install.ps1 | iex
+            ```
+
+            ## Checksums
+
+            See `SHA256SUMS` in the attached assets for verification.
+
+            ---
+            **Full Changelog:** https://github.com/${{ github.repository }}/compare/...v${{ steps.version.outputs.VERSION }}
           files: |
             dist/*
-            dist/SHA256SUMS
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}

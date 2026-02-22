@@ -35,13 +35,15 @@ class WALEntry:
         self.data = data or {}
 
     def to_json(self) -> str:
-        return json.dumps({
-            "seq": self.sequence,
-            "ts": self.timestamp,
-            "op": self.operation,
-            "task_id": self.task_id,
-            "data": self.data,
-        })
+        return json.dumps(
+            {
+                "seq": self.sequence,
+                "ts": self.timestamp,
+                "op": self.operation,
+                "task_id": self.task_id,
+                "data": self.data,
+            }
+        )
 
     @classmethod
     def from_json(cls, line: str) -> WALEntry:

@@ -129,17 +129,23 @@ class DeliberationEngine:
         return "\n".join(parts)
 
     def _plan_from_strategy(
-        self, strategy: Strategy, task_id: str, instruction: str, intent: Intent,
+        self,
+        strategy: Strategy,
+        task_id: str,
+        instruction: str,
+        intent: Intent,
     ) -> Plan:
         """Create a Plan from a matched strategy's milestones."""
         steps: list[TaskStep] = []
         for ms in strategy.milestones:
             step_id = ms.get("id", f"{task_id}-milestone-{len(steps) + 1}")
-            steps.append(TaskStep(
-                id=step_id,
-                description=ms.get("description", ""),
-                dependencies=ms.get("dependencies", []),
-            ))
+            steps.append(
+                TaskStep(
+                    id=step_id,
+                    description=ms.get("description", ""),
+                    dependencies=ms.get("dependencies", []),
+                )
+            )
 
         return Plan(
             task_id=task_id,
@@ -166,13 +172,13 @@ class DeliberationEngine:
 
             if line_stripped.startswith("UNDERSTANDING:"):
                 current_section = "understanding"
-                rest = line_stripped[len("UNDERSTANDING:"):].strip()
+                rest = line_stripped[len("UNDERSTANDING:") :].strip()
                 if rest:
                     understanding = rest
                 continue
             elif line_stripped.startswith("APPROACH:"):
                 current_section = "approach"
-                rest = line_stripped[len("APPROACH:"):].strip()
+                rest = line_stripped[len("APPROACH:") :].strip()
                 if rest:
                     approach = rest
                 continue
@@ -206,11 +212,13 @@ class DeliberationEngine:
                     desc = parts[0].strip()
                     tool = parts[1].rstrip("]").strip()
 
-                steps.append(TaskStep(
-                    id=f"{task_id}-step-{step_count}",
-                    description=desc,
-                    tool=tool,
-                ))
+                steps.append(
+                    TaskStep(
+                        id=f"{task_id}-step-{step_count}",
+                        description=desc,
+                        tool=tool,
+                    )
+                )
             elif current_section == "risks":
                 risks.append(line_stripped.lstrip("- "))
 

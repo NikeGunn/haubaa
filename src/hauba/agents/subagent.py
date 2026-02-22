@@ -96,20 +96,24 @@ class SubAgent(BaseAgent):
                 step_count += 1
                 desc = stripped[5:].strip()
                 tool = None
-                steps.append({
-                    "id": f"{task_id}-worker-{step_count}",
-                    "description": desc,
-                    "tool": tool,
-                })
+                steps.append(
+                    {
+                        "id": f"{task_id}-worker-{step_count}",
+                        "description": desc,
+                        "tool": tool,
+                    }
+                )
 
         # If LLM didn't provide structured tasks, use milestone's pre-defined tasks
         if not steps and self.milestone.tasks:
             for task_step in self.milestone.tasks:
-                steps.append({
-                    "id": task_step.id,
-                    "description": task_step.description,
-                    "tool": task_step.tool,
-                })
+                steps.append(
+                    {
+                        "id": task_step.id,
+                        "description": task_step.description,
+                        "tool": task_step.tool,
+                    }
+                )
 
         from hauba.core.types import TaskStep
 
@@ -131,11 +135,16 @@ class SubAgent(BaseAgent):
 
     async def execute(self, plan: Plan) -> Result:
         """Spawn Workers for each task, run in parallel batches, wait for all."""
-        await self.events.emit(EVENT_MILESTONE_STARTED, {
-            "milestone_id": self.milestone.id,
-            "agent_id": self.id,
-            "tasks": len(plan.steps),
-        }, source=self.id, task_id=plan.task_id)
+        await self.events.emit(
+            EVENT_MILESTONE_STARTED,
+            {
+                "milestone_id": self.milestone.id,
+                "agent_id": self.id,
+                "tasks": len(plan.steps),
+            },
+            source=self.id,
+            task_id=plan.task_id,
+        )
 
         results: list[Result] = []
         # Process in batches of max_parallel
@@ -177,18 +186,28 @@ class SubAgent(BaseAgent):
 
         # Share findings with other SubAgents if we discovered something useful
         if success and all_outputs:
-            await self.events.emit(EVENT_FINDING_SHARED, {
-                "milestone_id": self.milestone.id,
-                "summary": summary[:500],
-            }, source=self.id, task_id=plan.task_id)
+            await self.events.emit(
+                EVENT_FINDING_SHARED,
+                {
+                    "milestone_id": self.milestone.id,
+                    "summary": summary[:500],
+                },
+                source=self.id,
+                task_id=plan.task_id,
+            )
 
         event_type = EVENT_MILESTONE_COMPLETED if success else EVENT_MILESTONE_FAILED
-        await self.events.emit(event_type, {
-            "milestone_id": self.milestone.id,
-            "success": success,
-            "tasks_completed": successes,
-            "tasks_total": len(results),
-        }, source=self.id, task_id=plan.task_id)
+        await self.events.emit(
+            event_type,
+            {
+                "milestone_id": self.milestone.id,
+                "success": success,
+                "tasks_completed": successes,
+                "tasks_total": len(results),
+            },
+            source=self.id,
+            task_id=plan.task_id,
+        )
 
         return Result.ok(summary) if success else Result.fail(summary)
 

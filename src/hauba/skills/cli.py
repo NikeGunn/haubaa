@@ -123,8 +123,10 @@ def show(name: str = typer.Argument(..., help="Skill name to display")) -> None:
         console.print(f"[red]Skill not found: {name}[/red]")
         raise typer.Exit(1)
 
-    console.print(Panel(
-        skill.raw_content,
-        title=f"Skill: {skill.name}",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            skill.raw_content,
+            title=f"Skill: {skill.name}",
+            border_style="cyan",
+        )
+    )

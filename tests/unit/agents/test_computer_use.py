@@ -31,6 +31,7 @@ def agent(config, events):
 
 # --- Deliberation ---
 
+
 async def test_deliberate_returns_plan(agent):
     plan = await agent.deliberate("Open calculator", "task-123")
     assert plan.task_id == "task-123"
@@ -39,6 +40,7 @@ async def test_deliberate_returns_plan(agent):
 
 
 # --- Parse action ---
+
 
 def test_parse_action_json(agent):
     text = '{"action": "click", "x": 100, "y": 200, "reasoning": "click button"}'
@@ -49,11 +51,11 @@ def test_parse_action_json(agent):
 
 
 def test_parse_action_code_block(agent):
-    text = '''Here is the action:
+    text = """Here is the action:
 ```json
 {"action": "type", "text": "hello", "reasoning": "typing"}
 ```
-'''
+"""
     result = agent._parse_action(text)
     assert result is not None
     assert result["action"] == "type"
@@ -73,6 +75,7 @@ def test_parse_action_invalid(agent):
 
 
 # --- Execute loop ---
+
 
 async def test_execute_done_immediately(agent):
     """LLM says done on first iteration — should complete successfully."""
@@ -101,9 +104,7 @@ async def test_execute_click_then_done(agent):
     capture_result = ToolResult(
         tool_name="screen", success=True, output="Screenshot saved: /tmp/shot.png"
     )
-    click_result = ToolResult(
-        tool_name="screen", success=True, output="Clicked (100, 200) [left]"
-    )
+    click_result = ToolResult(tool_name="screen", success=True, output="Clicked (100, 200) [left]")
 
     # Track call count to return different results
     call_count = 0
@@ -120,7 +121,10 @@ async def test_execute_click_then_done(agent):
 
     # First LLM call: click, second: done
     responses = [
-        LLMResponse(content='{"action": "click", "x": 100, "y": 200, "reasoning": "click btn"}', model="test"),
+        LLMResponse(
+            content='{"action": "click", "x": 100, "y": 200, "reasoning": "click btn"}',
+            model="test",
+        ),
         LLMResponse(content='{"action": "done", "reasoning": "done"}', model="test"),
     ]
     call_idx = 0
@@ -144,9 +148,7 @@ async def test_execute_max_iterations(agent):
     capture_result = ToolResult(
         tool_name="screen", success=True, output="Screenshot saved: /tmp/shot.png"
     )
-    click_result = ToolResult(
-        tool_name="screen", success=True, output="Clicked (0, 0)"
-    )
+    click_result = ToolResult(tool_name="screen", success=True, output="Clicked (0, 0)")
 
     async def mock_screen_execute(**kwargs):
         action = kwargs.get("action", "")
@@ -172,9 +174,7 @@ async def test_execute_max_iterations(agent):
 
 async def test_execute_screenshot_failure(agent):
     """If screenshot fails, execution stops with error."""
-    fail_result = ToolResult(
-        tool_name="screen", success=False, error="Display not available"
-    )
+    fail_result = ToolResult(tool_name="screen", success=False, error="Display not available")
     agent._screen.execute = AsyncMock(return_value=fail_result)
     agent._delay = 0
 
@@ -186,8 +186,10 @@ async def test_execute_screenshot_failure(agent):
 
 # --- Review ---
 
+
 async def test_review_passes_through(agent):
     from hauba.core.types import Result
+
     r = Result.ok("all good")
     reviewed = await agent.review(r)
     assert reviewed.success
