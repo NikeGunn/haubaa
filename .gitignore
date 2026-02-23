@@ -60,3 +60,7 @@ ARCHITECTURE_V2.md
 BUILD_PHASES_V2.md
 PROGRESS.md
 workflow-guidelines.md
+DAILY_COMMANDS.txt
+
+# Raw asset sources (served from static/ instead)
+hauba-favicon.PNG
