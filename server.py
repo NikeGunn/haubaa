@@ -6,14 +6,56 @@ Serves:
   GET /install.ps1   → PowerShell installer
   GET /health        → Health check
   GET /favicon.png   → Favicon (Hauba mascot)
+  GET /api/version   → Latest GitHub release info (JSON, cached 5 min)
 """
 
+import json
 import os
+import threading
+import time
+import urllib.request
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 PORT = int(os.environ.get("PORT", 8080))
 BASE_DIR = Path(__file__).parent
+
+# ── GitHub release cache ──────────────────────────────────────────────────────
+GITHUB_REPO = "NikeGunn/haubaa"
+_release_cache: dict = {}
+_release_cache_lock = threading.Lock()
+_CACHE_TTL = 300  # seconds (5 min)
+
+
+def _fetch_latest_release() -> dict:
+    """Fetch latest release from GitHub API. Returns parsed JSON or raises."""
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    req = urllib.request.Request(url, headers={"User-Agent": "hauba.tech/1.0"})
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        return json.loads(resp.read().decode())
+
+
+def get_release_info() -> dict:
+    """Return cached release info, refreshing every _CACHE_TTL seconds."""
+    with _release_cache_lock:
+        now = time.monotonic()
+        if _release_cache.get("expires", 0) > now:
+            return _release_cache["data"]
+        try:
+            data = _fetch_latest_release()
+            tag = data.get("tag_name", "v0.1.1")
+            prerelease = data.get("prerelease", False)
+            # Determine label: pre-release flag OR semver major == 0 → Beta
+            parts = tag.lstrip("v").split(".")
+            is_beta = prerelease or (parts[0] == "0")
+            label = "Public Beta" if is_beta else "Stable"
+            result = {"version": tag, "label": label, "prerelease": prerelease}
+        except Exception as exc:
+            print(f"[hauba.tech] GitHub release fetch failed: {exc}")
+            result = {"version": "v0.1.1", "label": "Public Beta", "prerelease": True}
+        _release_cache["data"] = result
+        _release_cache["expires"] = now + _CACHE_TTL
+        return result
 
 INSTALL_SH = (BASE_DIR / "install.sh").read_text(encoding="utf-8")
 INSTALL_PS1 = (BASE_DIR / "install.ps1").read_text(encoding="utf-8")
@@ -606,7 +648,7 @@ LANDING_PAGE = """\
     </div>
 
     <h1 class="logo">H<span>AU</span>BA</h1>
-    <div class="version-tag">v0.1.1 &mdash; Public Beta</div>
+    <div class="version-tag" id="versionTag">v0.1.1 &mdash; Public Beta</div>
 
     <p class="hero-tagline">
       <strong>The AI that actually ships code.</strong><br>
@@ -843,6 +885,18 @@ LANDING_PAGE = """\
       this.style.transform = 'scale(1.1) rotate(5deg)';
       setTimeout(() => this.style.transform = '', 350);
     });
+
+    /* ── DYNAMIC VERSION FROM GITHUB RELEASES ── */
+    (function() {
+      fetch('/api/version')
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(info) {
+          if (!info || !info.version) return;
+          var el = document.getElementById('versionTag');
+          if (el) el.textContent = info.version + ' \u2014 ' + info.label;
+        })
+        .catch(function() { /* silently keep the default text */ });
+    })();
   </script>
 </body>
 </html>
@@ -857,6 +911,10 @@ class HaubaHandler(SimpleHTTPRequestHandler):
             self._send_text(INSTALL_PS1, "text/plain")
         elif self.path == "/health":
             self._send_text('{"status":"ok"}', "application/json")
+        elif self.path == "/api/version":
+            info = get_release_info()
+            payload = json.dumps(info, separators=(",", ":"))
+            self._send_text(payload, "application/json")
         elif self.path == "/favicon.png":
             if FAVICON_BYTES:
                 self._send_bytes(FAVICON_BYTES, "image/png")
