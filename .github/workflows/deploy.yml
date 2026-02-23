@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      PRODUCTION_URL: https://haubaa-production.up.railway.app
+      PRODUCTION_URL: https://hauba.tech
       HEALTH_PATH: /health
       # Railway typically completes in 60-180 s.  300 s = 2× safety margin.
       POLL_TIMEOUT: 300
