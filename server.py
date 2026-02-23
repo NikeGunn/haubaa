@@ -648,7 +648,7 @@ LANDING_PAGE = """\
     </div>
 
     <h1 class="logo">H<span>AU</span>BA</h1>
-    <div class="version-tag" id="versionTag">v0.1.1 &mdash; Public Beta</div>
+    <div class="version-tag" id="versionTag" style="visibility:hidden"></div>
 
     <p class="hero-tagline">
       <strong>The AI that actually ships code.</strong><br>
@@ -893,7 +893,7 @@ LANDING_PAGE = """\
         .then(function(info) {
           if (!info || !info.version) return;
           var el = document.getElementById('versionTag');
-          if (el) el.textContent = info.version + ' \u2014 ' + info.label;
+          if (el) { el.textContent = info.version + ' \u2014 ' + info.label; el.style.visibility = ''; }
         })
         .catch(function() { /* silently keep the default text */ });
     })();
