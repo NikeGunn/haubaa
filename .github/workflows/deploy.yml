@@ -1,0 +1,172 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+# Cancel any in-progress deploy when a new push arrives.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+permissions:
+  deployments: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Verify Railway deployment
+    runs-on: ubuntu-latest
+
+    env:
+      PRODUCTION_URL: https://haubaa-production.up.railway.app
+      HEALTH_PATH: /health
+      # Railway typically completes in 60-180 s.  300 s = 2× safety margin.
+      POLL_TIMEOUT: 300
+      POLL_INTERVAL: 10
+
+    steps:
+      # ------------------------------------------------------------------ #
+      # 1. Find Railway's deployment for this SHA, or create one ourselves. #
+      #    Railway creates the deployment via its GitHub App within seconds  #
+      #    of the push — but race conditions happen, so we retry briefly.   #
+      # ------------------------------------------------------------------ #
+      - name: Resolve deployment ID
+        id: resolve
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha  = context.sha;
+            const env  = 'distinguished-tenderness / production';
+            const repo = { owner: context.repo.owner, repo: context.repo.repo };
+
+            // Railway's GitHub App creates its deployment within seconds.
+            // We wait up to 30 s for it to appear before creating our own.
+            let deploymentId = null;
+            for (let i = 0; i < 6; i++) {
+              const { data } = await github.rest.repos.listDeployments({
+                ...repo,
+                sha,
+                environment: env,
+                per_page: 10,
+              });
+              if (data.length > 0) {
+                deploymentId = data[0].id;
+                console.log(`Found Railway deployment ${deploymentId} on attempt ${i + 1}`);
+                break;
+              }
+              console.log(`No deployment yet (attempt ${i + 1}/6), waiting 5 s…`);
+              await new Promise(r => setTimeout(r, 5000));
+            }
+
+            // If Railway never created one, create it ourselves.
+            if (!deploymentId) {
+              console.log('Railway deployment not found — creating our own.');
+              const { data } = await github.rest.deployments.create({
+                ...repo,
+                ref:                    sha,
+                environment:            env,
+                description:            'Railway production deployment',
+                auto_merge:             false,
+                required_contexts:      [],
+                transient_environment:  false,
+                production_environment: true,
+              });
+              deploymentId = data.id;
+              console.log(`Created deployment ${deploymentId}`);
+            }
+
+            core.setOutput('deployment_id', deploymentId);
+
+      # ------------------------------------------------------------------ #
+      # 2. Mark in_progress so the UI shows the spinner while we poll.      #
+      # ------------------------------------------------------------------ #
+      - name: Set status → in_progress
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner:           context.repo.owner,
+              repo:            context.repo.repo,
+              deployment_id:   ${{ steps.resolve.outputs.deployment_id }},
+              state:           'in_progress',
+              description:     'Waiting for Railway to serve the new build…',
+              log_url:         'https://railway.com/project/380fdf3d-367f-4ec5-83c7-2d49d077ee3e?environmentId=aecb7e59-0232-4996-952e-4f3ded062f0d',
+              environment_url: '${{ env.PRODUCTION_URL }}',
+            });
+
+      # ------------------------------------------------------------------ #
+      # 3. Poll /health until Railway has swapped the new container in.     #
+      #    We sleep 15 s first to let the rolling restart begin, avoiding   #
+      #    a false-positive from the OLD container still serving traffic.   #
+      # ------------------------------------------------------------------ #
+      - name: Wait for Railway healthcheck
+        id: healthcheck
+        run: |
+          URL="${PRODUCTION_URL}${HEALTH_PATH}"
+          DEADLINE=$(( $(date +%s) + POLL_TIMEOUT ))
+
+          echo "Target : $URL"
+          echo "Timeout: ${POLL_TIMEOUT}s  Interval: ${POLL_INTERVAL}s"
+          echo "Giving Railway 15 s to start its rolling restart…"
+          sleep 15
+
+          HEALTHY=false
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 10 "$URL" 2>/dev/null || echo "000")
+            echo "  $(date -u '+%H:%M:%SZ')  HTTP $HTTP_CODE"
+            if [ "$HTTP_CODE" = "200" ]; then
+              HEALTHY=true
+              break
+            fi
+            sleep "$POLL_INTERVAL"
+          done
+
+          if [ "$HEALTHY" = "true" ]; then
+            echo "result=success" >> "$GITHUB_OUTPUT"
+            echo "Railway is healthy — deployment confirmed."
+          else
+            echo "result=failure" >> "$GITHUB_OUTPUT"
+            echo "ERROR: Railway did not become healthy within ${POLL_TIMEOUT}s."
+            exit 1
+          fi
+
+      # ------------------------------------------------------------------ #
+      # 4a. Success — update the deployment status to success.              #
+      # ------------------------------------------------------------------ #
+      - name: Set status → success
+        if: steps.healthcheck.outputs.result == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner:           context.repo.owner,
+              repo:            context.repo.repo,
+              deployment_id:   ${{ steps.resolve.outputs.deployment_id }},
+              state:           'success',
+              description:     'Deployed and healthy on Railway.',
+              log_url:         'https://railway.com/project/380fdf3d-367f-4ec5-83c7-2d49d077ee3e?environmentId=aecb7e59-0232-4996-952e-4f3ded062f0d',
+              environment_url: '${{ env.PRODUCTION_URL }}',
+            });
+
+      # ------------------------------------------------------------------ #
+      # 4b. Failure — update the deployment status to failure.              #
+      #     `if: failure()` fires even when a prior step used `exit 1`.     #
+      # ------------------------------------------------------------------ #
+      - name: Set status → failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Guard: deployment_id may be empty if step 1 itself failed.
+            const id = '${{ steps.resolve.outputs.deployment_id }}';
+            if (!id) { console.log('No deployment ID — skipping status update.'); return; }
+            await github.rest.repos.createDeploymentStatus({
+              owner:           context.repo.owner,
+              repo:            context.repo.repo,
+              deployment_id:   parseInt(id),
+              state:           'failure',
+              description:     'Railway healthcheck timed out or returned non-200.',
+              log_url:         'https://railway.com/project/380fdf3d-367f-4ec5-83c7-2d49d077ee3e?environmentId=aecb7e59-0232-4996-952e-4f3ded062f0d',
+              environment_url: '${{ env.PRODUCTION_URL }}',
+            });
