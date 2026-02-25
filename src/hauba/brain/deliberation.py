@@ -1,6 +1,8 @@
 """Deliberation engine — Think before acting.
 
 Phase 2: Integrated with Skills and Strategies for domain-aware planning.
+Skills and strategies are loaded from BOTH user directories AND bundled content.
+Skill context is returned alongside the plan so the execution loop can use it.
 """
 
 from __future__ import annotations
@@ -12,7 +14,14 @@ import structlog
 
 from hauba.brain.intent import Intent, parse_intent
 from hauba.brain.llm import LLMRouter
-from hauba.core.constants import AGENTS_DIR, DEFAULT_THINK_TIME_SECONDS
+from hauba.core.constants import (
+    AGENTS_DIR,
+    BUNDLED_SKILLS_DIR,
+    BUNDLED_STRATEGIES_DIR,
+    DEFAULT_THINK_TIME_SECONDS,
+    SKILLS_DIR,
+    STRATEGIES_DIR,
+)
 from hauba.core.types import LLMMessage, Plan, TaskStep
 from hauba.skills.loader import SkillLoader
 from hauba.skills.matcher import SkillMatcher
@@ -47,6 +56,7 @@ class DeliberationEngine:
     """Implements UNDERSTAND → PLAN phases with minimum think time.
 
     Phase 2: Matches tasks to skills and strategies for better planning.
+    Skills are loaded from both ~/.hauba/skills/ AND bundled_skills/.
     """
 
     def __init__(
@@ -58,20 +68,34 @@ class DeliberationEngine:
     ) -> None:
         self._llm = llm
         self._think_time = think_time
-        self._skill_loader = skill_loader or SkillLoader()
+        # Load from BOTH user dirs AND bundled dirs so skills always work out-of-box
+        self._skill_loader = skill_loader or SkillLoader(
+            skill_dirs=[SKILLS_DIR, BUNDLED_SKILLS_DIR]
+        )
         self._skill_matcher = SkillMatcher(self._skill_loader)
-        self._strategy_engine = strategy_engine or StrategyEngine()
+        self._strategy_engine = strategy_engine or StrategyEngine(
+            strategy_dirs=[STRATEGIES_DIR, BUNDLED_STRATEGIES_DIR]
+        )
+        # Cache: last matched skill context for injection into execution loop
+        self._last_skill_context: str = ""
+        self._last_matched_strategy: Strategy | None = None
 
     async def deliberate(self, instruction: str, task_id: str) -> Plan:
-        """Full deliberation: parse intent → match skills → call LLM → produce Plan."""
+        """Full deliberation: parse intent → match skills → call LLM → produce Plan.
+
+        Side effects: caches skill_context and matched_strategy so the Director
+        can inject them into the agentic loop's system prompt.
+        """
         start = time.monotonic()
 
         # Parse intent locally first
         intent = parse_intent(instruction)
 
-        # Match skills and strategies
+        # Match skills and strategies — cache them for execution phase
         skill_context = self._build_skill_context(instruction)
+        self._last_skill_context = skill_context
         strategy = self._strategy_engine.match_domain(instruction)
+        self._last_matched_strategy = strategy
 
         # If a strategy matches, use its milestones as the plan skeleton
         if strategy and strategy.milestones:
@@ -104,27 +128,81 @@ class DeliberationEngine:
             task_id=task_id,
             steps=len(plan.steps),
             confidence=plan.confidence,
+            skills_matched=bool(skill_context),
+            strategy_matched=strategy.name if strategy else None,
         )
         return plan
 
+    @property
+    def skill_context(self) -> str:
+        """Return the last matched skill context for injection into execution."""
+        return self._last_skill_context
+
+    @property
+    def matched_strategy(self) -> Strategy | None:
+        """Return the last matched strategy."""
+        return self._last_matched_strategy
+
     def _build_skill_context(self, instruction: str) -> str:
-        """Match skills to the task and build context for the LLM."""
+        """Match skills to the task and build rich context for the LLM.
+
+        This context is used BOTH during planning AND during execution.
+        It includes approach phases, constraints, error recovery, and scale tips.
+        """
         matches = self._skill_matcher.match(instruction, top_k=3)
         if not matches:
             return ""
 
         parts = []
         for match in matches:
-            parts.append(f"**{match.skill.name}** (relevance: {match.score:.0%})")
-            if match.skill.approach:
+            skill = match.skill
+            parts.append(f"### {skill.name} (relevance: {match.score:.0%})")
+            if skill.capabilities:
+                parts.append("Capabilities:")
+                for cap in skill.capabilities[:5]:
+                    parts.append(f"  - {cap}")
+            if skill.approach:
                 parts.append("Approach:")
-                for step in match.skill.approach[:5]:
+                for step in skill.approach:
                     parts.append(f"  - {step}")
-            if match.skill.constraints:
-                parts.append("Constraints:")
-                for c in match.skill.constraints[:3]:
+            if skill.constraints:
+                parts.append("Constraints (MUST follow):")
+                for c in skill.constraints:
                     parts.append(f"  - {c}")
             parts.append("")
+
+        return "\n".join(parts)
+
+    def build_execution_skill_context(self, instruction: str) -> str:
+        """Build a compact skill context specifically for the execution loop system prompt.
+
+        Returns skill approach + constraints + error recovery formatted for an agent
+        that is actively writing code (not planning).
+        """
+        matches = self._skill_matcher.match(instruction, top_k=2)
+        if not matches:
+            return ""
+
+        parts = ["## Skill Guidance (follow these during execution)"]
+        for match in matches:
+            skill = match.skill
+            parts.append(f"\n### {skill.name}")
+            if skill.approach:
+                parts.append("Execution phases:")
+                for step in skill.approach:
+                    parts.append(f"  - {step}")
+            if skill.constraints:
+                parts.append("Hard constraints:")
+                for c in skill.constraints:
+                    parts.append(f"  - {c}")
+            # Include raw_content sections for error recovery if present
+            if "## Error Recovery" in skill.raw_content:
+                recovery_section = skill.raw_content.split("## Error Recovery")[1]
+                # Take until next ## section or end
+                next_section = recovery_section.find("\n## ")
+                if next_section > 0:
+                    recovery_section = recovery_section[:next_section]
+                parts.append(f"Error recovery:{recovery_section.strip()}")
 
         return "\n".join(parts)
 

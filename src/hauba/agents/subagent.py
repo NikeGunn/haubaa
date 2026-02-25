@@ -1,6 +1,7 @@
 """SubAgent — Team Lead that receives milestones, spawns Workers, waits for results.
 
 Phase 2: Cross-agent event sharing, TaskLedger-aware worker coordination.
+Skill context flows from Director → DAG → SubAgent → Worker.
 """
 
 from __future__ import annotations
@@ -46,7 +47,10 @@ List all tasks. Independent tasks will run in parallel. Dependent tasks run sequ
 
 
 class SubAgent(BaseAgent):
-    """SubAgent — receives a milestone, decomposes into tasks, spawns Workers."""
+    """SubAgent — receives a milestone, decomposes into tasks, spawns Workers.
+
+    Passes skill context to each Worker so they have domain-aware execution guidance.
+    """
 
     agent_type = "subagent"
 
@@ -57,12 +61,14 @@ class SubAgent(BaseAgent):
         milestone: Milestone,
         ledger: TaskLedger | None = None,
         workspace: Path | None = None,
+        skill_context: str = "",
     ) -> None:
         super().__init__(config, events)
         self.milestone = milestone
         self._llm = LLMRouter(config)
         self._ledger = ledger
         self._workspace = workspace
+        self._skill_context = skill_context
         self._workers: list[Worker] = []
         self._max_parallel = DEFAULT_MAX_PARALLEL_WORKERS
         self._shared_findings: list[dict] = []
@@ -137,7 +143,11 @@ class SubAgent(BaseAgent):
         return plan
 
     async def execute(self, plan: Plan) -> Result:
-        """Spawn Workers for each task, run in parallel batches, wait for all."""
+        """Spawn Workers for each task, run in parallel batches, wait for all.
+
+        Each Worker receives the skill_context from the Director so it knows
+        HOW to execute domain-specific tasks.
+        """
         await self.events.emit(
             EVENT_MILESTONE_STARTED,
             {
@@ -154,7 +164,7 @@ class SubAgent(BaseAgent):
         for i in range(0, len(plan.steps), self._max_parallel):
             batch = plan.steps[i : i + self._max_parallel]
 
-            # Spawn workers for this batch
+            # Spawn workers for this batch — each gets skill_context and workspace
             worker_tasks = []
             for step in batch:
                 worker = Worker(
@@ -163,6 +173,7 @@ class SubAgent(BaseAgent):
                     task_step=step,
                     parent_id=self.id,
                     workspace=self._workspace,
+                    skill_context=self._skill_context,
                 )
                 self._workers.append(worker)
                 worker_tasks.append(worker.run(step.description))

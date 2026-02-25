@@ -1,7 +1,8 @@
 """Worker — Specialist agent that executes a specific task using a recursive agentic loop.
 
 Workers have the same recursive tool-calling loop as the Director,
-but scoped to a single task. They loop until their task is complete.
+but scoped to a single task. They receive skill context from the Director
+to guide their execution, and they MUST verify their output works.
 """
 
 from __future__ import annotations
@@ -33,7 +34,8 @@ from hauba.tools.git import GitTool
 
 logger = structlog.get_logger()
 
-WORKER_SYSTEM_PROMPT = """You are a specialist Worker agent. You execute ONE specific task completely and correctly.
+WORKER_SYSTEM_PROMPT = """You are a specialist Worker agent in the Hauba AI engineering framework.
+You execute ONE specific task completely, correctly, and with verified output.
 
 ## YOUR WORKSPACE
 {cwd}
@@ -43,20 +45,41 @@ WORKER_SYSTEM_PROMPT = """You are a specialist Worker agent. You execute ONE spe
 - `files`: Read/write/edit files. Relative paths resolve under {cwd}.
   - write: action="write", path="...", content="..."
   - read: action="read", path="..."
+  - edit: action="edit", path="...", old_text="...", new_text="..."
   - mkdir: action="mkdir", path="..."
+  - list: action="list", path="..."
 - `git`: Git operations.
 
-## YOUR JOB
-1. Complete the assigned task fully and correctly.
-2. Write complete, working code — no placeholders or TODOs.
-3. If something fails, read the error and try a different approach.
-4. Verify your output with bash (run the code, check output).
-5. When done, respond with text only (no tool calls): state what you produced and where.
-"""
+## MANDATORY EXECUTION RULES
+
+1. Write COMPLETE, WORKING code — no placeholders, no TODOs, no stubs.
+2. Every file must have ALL imports, ALL logic, and be syntactically valid.
+3. ALWAYS verify your output:
+   - After writing a Python file: run `python -m py_compile <file>` to check syntax
+   - After writing code: run it with `bash` to verify it works
+   - After installing packages: verify the import works
+4. If a command FAILS (non-zero exit code or ERROR in output):
+   - READ the error message carefully
+   - Use `files read` to inspect the file
+   - Use `files edit` with old_text/new_text to fix the specific issue
+   - Re-run the command to verify the fix
+   - Do NOT move on until the error is resolved
+5. When your task is fully complete and VERIFIED, respond with text only (no tool calls).
+
+## SELF-CORRECTION
+- ImportError → install the package or fix the import path
+- SyntaxError → read the file, find the line, fix it with `files edit`
+- TypeError/NameError → check function signatures and variable names
+- FileNotFoundError → check the path, create the directory if needed
+- NEVER give up. Try at least 3 approaches before reporting failure.
+{skill_context}"""
 
 
 class Worker(BaseAgent):
-    """Worker agent — executes a specific task using a recursive agentic loop."""
+    """Worker agent — executes a specific task using a recursive agentic loop.
+
+    Receives skill context from parent SubAgent/Director for domain-aware execution.
+    """
 
     agent_type = "worker"
 
@@ -67,20 +90,42 @@ class Worker(BaseAgent):
         task_step: TaskStep,
         parent_id: str = "",
         workspace: Path | None = None,
+        skill_context: str = "",
     ) -> None:
         super().__init__(config, events)
         self.task_step = task_step
         self.parent_id = parent_id
         self._llm = LLMRouter(config)
         self._workspace = workspace or Path.cwd()
+        self._skill_context = skill_context
+        # FileTool gets base_dir so relative paths work correctly
         self._tools = {
             "bash": BashTool(cwd=str(self._workspace)),
-            "files": FileTool(),
+            "files": FileTool(base_dir=self._workspace),
             "git": GitTool(cwd=str(self._workspace)),
         }
+        # Register optional tools (web_search, browser)
+        self._register_optional_tools()
+
+    def _register_optional_tools(self) -> None:
+        """Conditionally register tools if dependencies are available."""
+        try:
+            from hauba.tools.web import WebSearchTool
+
+            self._tools["web_search"] = WebSearchTool()
+        except Exception:
+            pass
 
     def _get_tool_schemas(self) -> list[dict[str, Any]]:
         return [tool.tool_schema for tool in self._tools.values()]
+
+    def _build_system_prompt(self) -> str:
+        """Build worker system prompt with workspace and skill context."""
+        cwd = str(self._workspace)
+        skill_section = ""
+        if self._skill_context:
+            skill_section = f"\n\n{self._skill_context}"
+        return WORKER_SYSTEM_PROMPT.format(cwd=cwd, skill_context=skill_section)
 
     async def deliberate(self, instruction: str, task_id: str) -> Plan:
         """Workers have minimal deliberation — they execute directly."""
@@ -113,12 +158,15 @@ class Worker(BaseAgent):
         return result
 
     async def _agentic_loop(self, instruction: str, task_id: str) -> Result:
-        """Recursive agentic loop for worker execution."""
+        """Recursive agentic loop for worker execution.
+
+        Includes skill context in the system prompt for domain-aware code generation.
+        """
         tool_schemas = self._get_tool_schemas()
 
         conversation: list[dict[str, Any]] = [
-            {"role": "system", "content": WORKER_SYSTEM_PROMPT.format(cwd=str(self._workspace))},
-            {"role": "user", "content": f"Execute this task: {instruction}"},
+            {"role": "system", "content": self._build_system_prompt()},
+            {"role": "user", "content": f"Execute this task completely:\n\n{instruction}"},
         ]
 
         for iteration in range(DEFAULT_MAX_WORKER_ITERATIONS):
@@ -170,7 +218,7 @@ class Worker(BaseAgent):
                         {
                             "role": "tool",
                             "tool_call_id": tool_call.id,
-                            "content": f"Unknown tool: {tool_call.name}",
+                            "content": f"Unknown tool: {tool_call.name}. Available: {', '.join(self._tools.keys())}",
                         }
                     )
                     continue

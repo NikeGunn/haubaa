@@ -55,7 +55,7 @@ MULTI_AGENT_THRESHOLD = 5
 # Max agentic loop iterations to prevent infinite loops
 MAX_ITERATIONS = DEFAULT_MAX_AGENT_ITERATIONS
 
-DIRECTOR_SYSTEM_PROMPT = """You are an elite autonomous software engineer. You build complete, working, production-grade software.
+DIRECTOR_SYSTEM_PROMPT = """You are Hauba, an elite autonomous software engineer. You build complete, working, production-grade software that humans can deploy and use immediately.
 
 ## YOUR WORKSPACE
 All files go here: {cwd}
@@ -70,45 +70,73 @@ All files go here: {cwd}
   - `action="list"` + `path="."` → lists directory contents
 - `git`: Run git commands (init, add, commit).
 
-## HOW TO BUILD SOFTWARE
+## MANDATORY EXECUTION PROTOCOL
 
-### Step 1: Create directory structure first
-Use `files` with `action="mkdir"` to create the project folder, then subdirectories.
+You MUST follow this exact sequence. Do NOT skip any step.
 
-### Step 2: Write all files
-Use `files` with `action="write"` for EVERY file. Include COMPLETE file content — no placeholders.
+### Phase 1: SCAFFOLD — Create project structure
+1. Create the root project directory with `files mkdir`
+2. Create subdirectories for the project (src/, tests/, static/, templates/, etc.)
+3. Plan the complete file list before writing any code
 
-### Step 3: Install dependencies
-Use `bash` with `cwd="{cwd}"` to run pip/npm/etc.
+### Phase 2: IMPLEMENT — Write ALL source files
+1. Write every file with COMPLETE, WORKING code using `files write`
+2. NO placeholders, NO "# TODO", NO "pass" stubs, NO "..." ellipsis
+3. Every file must be syntactically valid and import-complete
+4. Write files in dependency order: models/types first, then logic, then entry points
+5. Include ALL imports at the top of each file
+6. For Python: create requirements.txt with pinned versions
+7. For Node.js: create package.json with all dependencies
+8. For web apps: create complete HTML/CSS/JS files
 
-### Step 4: Test/verify
-Use `bash` to run the code, run tests, check output. If errors, fix them.
+### Phase 3: INSTALL — Set up dependencies
+1. Use `bash` to install dependencies (pip install, npm install, etc.)
+2. If installation fails: READ the error, check the package name, try alternatives
+3. Create virtual environments if needed
 
-### Step 5: Only when fully working — respond with text summary (no more tool calls).
+### Phase 4: VERIFY — Test that everything works (MANDATORY — DO NOT SKIP)
+1. Run the application or its tests with `bash`
+2. Check for syntax errors: `python -m py_compile file.py` or equivalent
+3. Run the main entry point and verify output
+4. If ANY test or run fails:
+   a. READ the full error message carefully
+   b. Use `files read` to check the failing file
+   c. Use `files edit` to fix the SPECIFIC issue
+   d. Re-run the test/command
+   e. Repeat until it PASSES — do NOT move on with broken code
 
-## RULES FOR PRODUCTION-GRADE CODE
-1. Write COMPLETE, working code — no "# TODO" or placeholders.
-2. Every file must be syntactically correct and complete.
-3. Include all necessary imports, dependencies, and boilerplate.
-4. Create a README.md explaining how to run the project.
-5. If a bash command fails: READ the error, DIAGNOSE it, try a DIFFERENT approach.
-6. Never give up after one failure — error messages tell you exactly what to fix.
-7. For Python projects: always create requirements.txt and use a virtual env or direct pip install.
-8. For web projects: create proper HTML with embedded or linked CSS/JS.
-9. For API projects: include example curl commands in README.
+### Phase 5: FINALIZE — Polish and document
+1. Create README.md with: what it does, how to install, how to run, example usage
+2. Use `git` to initialize repo and make initial commit
+3. Only THEN respond with a text summary (no more tool calls)
 
-## EXAMPLE: Building a Todo CLI app
-1. `files mkdir "todo-app"`
-2. `files write "todo-app/todo.py"` (complete Python code)
-3. `files write "todo-app/requirements.txt"` (dependencies)
-4. `bash "python todo-app/todo.py --help"` (verify it runs)
-5. `files write "todo-app/README.md"` (instructions)
-6. Text summary: "Built a todo CLI at todo-app/ with add/list/done/delete commands."
+## SELF-CORRECTION RULES
+- If a bash command returns a non-zero exit code or ERROR: that is a BUG. You MUST fix it.
+- If `python file.py` shows an ImportError: fix the import or install the package.
+- If `python file.py` shows a SyntaxError: read the file and fix the syntax.
+- If `python file.py` shows a TypeError/NameError: read the file and fix the code.
+- NEVER say "the code should work" — PROVE it works by running it.
+- NEVER give up after one failure. Try at least 3 different approaches before declaring failure.
+- If you wrote a file, ALWAYS verify it by reading it back or running it.
+
+## QUALITY STANDARDS
+1. Write COMPLETE, working code that a human can run with zero modifications.
+2. Every file must be syntactically correct and fully functional.
+3. Include all necessary imports, dependencies, and configuration.
+4. Use proper error handling (try/except, error responses, validation).
+5. For web apps: include proper routing, error pages, and static file serving.
+6. For APIs: include input validation, proper HTTP status codes, and error responses.
+7. For CLI apps: include --help, proper argument parsing, and user-friendly output.
 
 ## COMPLETION SIGNAL
-When you have verified the software works, respond with ONLY a text summary — no tool calls.
-List: what was built, where files are, how to run it.
-"""
+ONLY respond with text (no tool calls) when ALL of these are true:
+1. All source files are written
+2. Dependencies are installed
+3. You have RUN the code and it WORKS (verified via bash)
+4. README.md exists with run instructions
+
+Your text summary must include: what was built, file listing, and exact commands to run it.
+{skill_context}"""
 
 
 class DirectorAgent(BaseAgent):
@@ -179,10 +207,21 @@ class DirectorAgent(BaseAgent):
         """Get OpenAI-compatible tool schemas for all registered tools."""
         return [tool.tool_schema for tool in self._tools.values()]
 
-    def _build_system_prompt(self, workspace: Path | None = None) -> str:
-        """Build the system prompt with workspace directory."""
+    def _build_system_prompt(
+        self, workspace: Path | None = None, skill_context: str = ""
+    ) -> str:
+        """Build the system prompt with workspace directory and skill context.
+
+        Args:
+            workspace: The workspace directory path.
+            skill_context: Matched skill guidance to inject into the prompt.
+        """
         cwd = str(workspace) if workspace else os.getcwd()
-        return DIRECTOR_SYSTEM_PROMPT.format(cwd=cwd)
+        # Format skill context section — insert it at the end of the prompt
+        skill_section = ""
+        if skill_context:
+            skill_section = f"\n\n{skill_context}"
+        return DIRECTOR_SYSTEM_PROMPT.format(cwd=cwd, skill_context=skill_section)
 
     async def deliberate(self, instruction: str, task_id: str) -> Plan:
         """Quick deliberation — decide if this is simple or complex.
@@ -250,13 +289,19 @@ class DirectorAgent(BaseAgent):
 
         Simple tasks: Run the agentic loop (LLM + tools in a recursive loop).
         Complex tasks: Use DAG executor with SubAgent teams.
+        Skill context from deliberation is injected into the execution prompt.
         """
         await self._memory.init()
 
         is_complex = len(plan.steps) >= MULTI_AGENT_THRESHOLD
 
+        # Get skill context from deliberation for execution injection
+        skill_context = self._deliberation.build_execution_skill_context(
+            self._original_instruction or plan.understanding
+        )
+
         if is_complex:
-            result = await self._execute_multi_agent(plan)
+            result = await self._execute_multi_agent(plan, skill_context)
         else:
             # Simple task: use the original instruction + plan context for the agentic loop
             original = self._original_instruction or plan.understanding
@@ -265,7 +310,9 @@ class DirectorAgent(BaseAgent):
                 task_description = f"{original}\n\nSuggested steps:\n{step_hints}"
             else:
                 task_description = original
-            result = await self._agentic_loop(task_description, plan.task_id)
+            result = await self._agentic_loop(
+                task_description, plan.task_id, skill_context=skill_context
+            )
 
         # Save task history
         status = "completed" if result.success else "failed"
@@ -282,24 +329,34 @@ class DirectorAgent(BaseAgent):
 
         return result
 
-    async def _agentic_loop(self, instruction: str, task_id: str) -> Result:
+    async def _agentic_loop(
+        self, instruction: str, task_id: str, skill_context: str = ""
+    ) -> Result:
         """The core recursive agentic loop.
 
         This is the heart of Hauba's execution engine. The LLM receives tools
         and calls them in a loop until the task is complete.
 
         Flow:
-        1. Send conversation + tools to LLM
+        1. Send conversation + tools to LLM (enriched with skill context)
         2. If LLM returns tool calls → execute them, append results, loop
         3. If LLM returns text only → task is done, return result
         4. Max iterations guard prevents infinite loops
+
+        Args:
+            instruction: The task to execute.
+            task_id: Unique task identifier.
+            skill_context: Matched skill guidance injected into system prompt.
         """
         workspace = self._workspace or Path.cwd()
         tool_schemas = self._get_tool_schemas()
 
         # Build conversation with OpenAI message format (dicts, not LLMMessage)
         conversation: list[dict[str, Any]] = [
-            {"role": "system", "content": self._build_system_prompt(workspace)},
+            {
+                "role": "system",
+                "content": self._build_system_prompt(workspace, skill_context),
+            },
             {"role": "user", "content": instruction},
         ]
 
@@ -414,7 +471,9 @@ class DirectorAgent(BaseAgent):
             f"Partial output:\n" + "\n".join(all_outputs[-10:])
         )
 
-    async def _execute_multi_agent(self, plan: Plan) -> Result:
+    async def _execute_multi_agent(
+        self, plan: Plan, skill_context: str = ""
+    ) -> Result:
         """Execute complex plans via DAG with SubAgent teams."""
         from hauba.core.dag import DAGExecutor
 
@@ -425,6 +484,7 @@ class DirectorAgent(BaseAgent):
             events=self.events,
             ledger=self._ledger,
             workspace=self._workspace,
+            skill_context=skill_context,
         )
         dag.add_milestones(milestones)
 

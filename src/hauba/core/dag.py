@@ -25,6 +25,7 @@ class DAGExecutor:
 
     Uses the WAIT architecture: dependent milestones WAIT.
     Independent milestones run in PARALLEL.
+    Skill context flows from Director → DAG → SubAgent → Worker.
     """
 
     def __init__(
@@ -33,11 +34,13 @@ class DAGExecutor:
         events: EventEmitter,
         ledger: TaskLedger | None = None,
         workspace: Path | None = None,
+        skill_context: str = "",
     ) -> None:
         self._config = config
         self._events = events
         self._ledger = ledger
         self._workspace = workspace
+        self._skill_context = skill_context
         self._milestones: dict[str, Milestone] = {}
         self._results: dict[str, Result] = {}
         self._completion_events: dict[str, asyncio.Event] = {}
@@ -138,6 +141,7 @@ class DAGExecutor:
             milestone=milestone,
             ledger=self._ledger,
             workspace=self._workspace,
+            skill_context=self._skill_context,
         )
 
         try:
