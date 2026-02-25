@@ -184,6 +184,29 @@ class LLMResponse(BaseModel):
     finish_reason: str = ""
 
 
+class LLMToolCall(BaseModel):
+    """A single tool call from the LLM (native function calling)."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class LLMResponseWithTools(BaseModel):
+    """LLM response that may contain tool calls (native function calling)."""
+
+    content: str = ""
+    tool_calls: list[LLMToolCall] = Field(default_factory=list)
+    model: str = ""
+    tokens_used: int = 0
+    cost: float = 0.0
+    finish_reason: str = ""
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return len(self.tool_calls) > 0
+
+
 # Phase 5: Compose types
 
 

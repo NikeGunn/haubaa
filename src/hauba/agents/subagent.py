@@ -6,6 +6,7 @@ Phase 2: Cross-agent event sharing, TaskLedger-aware worker coordination.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import structlog
 
@@ -55,11 +56,13 @@ class SubAgent(BaseAgent):
         events: EventEmitter,
         milestone: Milestone,
         ledger: TaskLedger | None = None,
+        workspace: Path | None = None,
     ) -> None:
         super().__init__(config, events)
         self.milestone = milestone
         self._llm = LLMRouter(config)
         self._ledger = ledger
+        self._workspace = workspace
         self._workers: list[Worker] = []
         self._max_parallel = DEFAULT_MAX_PARALLEL_WORKERS
         self._shared_findings: list[dict] = []
@@ -159,6 +162,7 @@ class SubAgent(BaseAgent):
                     events=self.events,
                     task_step=step,
                     parent_id=self.id,
+                    workspace=self._workspace,
                 )
                 self._workers.append(worker)
                 worker_tasks.append(worker.run(step.description))

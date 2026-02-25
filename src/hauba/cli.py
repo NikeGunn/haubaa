@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -80,7 +81,6 @@ def init() -> None:
         # Sanitize: if the key was pasted multiple times, extract just the first one
         api_key = api_key.strip()
         if provider == "openai" and api_key.startswith("sk-"):
-            # OpenAI keys: sk-proj-... or sk-... — find where a repeat starts
             for prefix in ("sk-proj-", "sk-"):
                 if api_key.startswith(prefix):
                     second = api_key.find(prefix, len(prefix))
@@ -102,6 +102,16 @@ def init() -> None:
 
     config.save()
     console.print("[green]+[/green] Configuration saved to ~/.hauba/settings.json")
+
+    # Test API connection
+    console.print("[dim]Testing API connection...[/dim]")
+    success, message = asyncio.run(_test_api(config))
+    if success:
+        console.print(f"[green]+[/green] {message}")
+    else:
+        console.print(f"[yellow]![/yellow] API test failed: {message}")
+        console.print("[dim]  You can still proceed — check your API key if tasks fail.[/dim]")
+
     console.print()
     console.print(
         Panel(
@@ -115,14 +125,33 @@ def init() -> None:
     )
 
 
+async def _test_api(config: object) -> tuple[bool, str]:
+    """Test the LLM API connection."""
+    from hauba.brain.llm import LLMRouter
+
+    try:
+        llm = LLMRouter(config)  # type: ignore[arg-type]
+        return await llm.test_connection()
+    except Exception as exc:
+        return False, str(exc)
+
+
 @app.command()
-def run(task: str = typer.Argument(..., help="Task description for your AI team")) -> None:
+def run(
+    task: str = typer.Argument(..., help="Task description for your AI team"),
+    workspace: str = typer.Option(
+        "",
+        "--workspace",
+        "-w",
+        help="Output directory for generated files (default: ./hauba-output/)",
+    ),
+) -> None:
     """Run a task with your AI engineering team."""
     _check_init()
-    asyncio.run(_run_task(task))
+    asyncio.run(_run_task(task, workspace))
 
 
-async def _run_task(task: str) -> None:
+async def _run_task(task: str, workspace_path: str = "") -> None:
     """Execute a task using the Director agent."""
     from hauba.agents.director import DirectorAgent
     from hauba.core.config import ConfigManager
@@ -133,11 +162,25 @@ async def _run_task(task: str) -> None:
     events = EventEmitter()
     ui = TerminalUI(console, events)
 
-    director = DirectorAgent(config=config, events=events)
+    # Determine workspace directory
+    workspace = Path(workspace_path).resolve() if workspace_path else Path.cwd() / "hauba-output"
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    director = DirectorAgent(config=config, events=events, workspace=workspace)
 
     await ui.show_task_start(task)
     result = await director.run(task)
     await ui.show_task_result(result)
+
+    # Show stats
+    stats = director._llm.stats
+    if stats["call_count"] > 0:
+        console.print(
+            f"[dim]  LLM calls: {stats['call_count']} | "
+            f"Tokens: {stats['total_tokens']:,} | "
+            f"Cost: ${stats['total_cost']:.4f}[/dim]"
+        )
+    console.print(f"[dim]  Workspace: {workspace}[/dim]")
 
 
 @app.command()
@@ -228,7 +271,7 @@ def voice() -> None:
 
 
 async def _voice_loop() -> None:
-    """Voice conversation loop: listen → process → speak."""
+    """Voice conversation loop: listen -> process -> speak."""
     from hauba.channels.voice import VoiceChannel, VoiceChannelError
 
     try:
@@ -252,7 +295,6 @@ async def _voice_loop() -> None:
                 continue
             console.print(f"[bold]You:[/bold] {text}")
 
-            # Process via Director
             from hauba.agents.director import DirectorAgent
             from hauba.core.config import ConfigManager
             from hauba.core.events import EventEmitter
@@ -344,8 +386,6 @@ def compose_up(
 
 async def _compose_run(task: str, file: str) -> None:
     """Execute a compose run."""
-    from pathlib import Path
-
     from hauba.compose.parser import parse_compose_file
     from hauba.compose.runner import ComposeRunner
     from hauba.core.config import ConfigManager
@@ -379,8 +419,6 @@ def validate(
     file: str = typer.Option("hauba.yaml", "--file", "-f", help="Path to hauba.yaml"),
 ) -> None:
     """Validate a hauba.yaml compose file."""
-    from pathlib import Path
-
     from hauba.compose.parser import validate_compose_file
 
     compose_path = Path(file).resolve()
@@ -389,7 +427,7 @@ def validate(
     if issues:
         console.print("[red]Validation failed:[/red]")
         for issue in issues:
-            console.print(f"  [red]•[/red] {issue}")
+            console.print(f"  [red]*[/red] {issue}")
         raise typer.Exit(1)
     else:
         console.print(f"[green]+ {compose_path.name} is valid[/green]")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -15,18 +16,49 @@ logger = structlog.get_logger()
 
 
 class FileTool(BaseTool):
-    """Read, write, and manage files."""
+    """Read, write, edit, and manage files."""
 
     name = "files"
-    description = "Read, write, edit files and create directories"
+    description = "Read, write, edit files and create directories. Use action='write' to create new files, action='read' to read existing files, action='edit' for search-and-replace edits, action='mkdir' to create directories."
+
+    def _parameters_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["read", "write", "append", "edit", "mkdir", "list", "exists", "delete"],
+                    "description": "The file operation to perform.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "File or directory path.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Content to write (for write/append actions).",
+                },
+                "old_text": {
+                    "type": "string",
+                    "description": "Text to find (for edit action — search and replace).",
+                },
+                "new_text": {
+                    "type": "string",
+                    "description": "Replacement text (for edit action — search and replace).",
+                },
+            },
+            "required": ["action", "path"],
+        }
 
     async def execute(self, **kwargs: object) -> ToolResult:
         """Execute a file operation.
 
         Args:
-            action: read | write | append | mkdir | list | exists | delete
+            action: read | write | append | edit | mkdir | list | exists | delete
             path: File or directory path.
             content: Content to write (for write/append).
+            old_text: Text to find (for edit).
+            new_text: Replacement text (for edit).
         """
         action = str(kwargs.get("action", ""))
         path_str = str(kwargs.get("path", ""))
@@ -49,6 +81,10 @@ class FileTool(BaseTool):
             elif action == "append":
                 content = str(kwargs.get("content", ""))
                 return await self._append(path, content)
+            elif action == "edit":
+                old_text = str(kwargs.get("old_text", ""))
+                new_text = str(kwargs.get("new_text", ""))
+                return await self._edit(path, old_text, new_text)
             elif action == "mkdir":
                 return await self._mkdir(path)
             elif action == "list":
@@ -90,6 +126,37 @@ class FileTool(BaseTool):
         with open(path, "a", encoding="utf-8") as f:
             f.write(content)
         return ToolResult(tool_name=self.name, success=True, output=f"Appended to: {path}")
+
+    async def _edit(self, path: Path, old_text: str, new_text: str) -> ToolResult:
+        """Search-and-replace edit on a file."""
+        if not path.exists():
+            return ToolResult(tool_name=self.name, success=False, error=f"File not found: {path}")
+        if not old_text:
+            return ToolResult(
+                tool_name=self.name, success=False, error="old_text is required for edit"
+            )
+
+        content = path.read_text(encoding="utf-8")
+        if old_text not in content:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                error=f"Text not found in {path}. The exact text to replace was not found.",
+            )
+
+        new_content = content.replace(old_text, new_text, 1)
+
+        # Atomic write
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            Path(tmp_path).replace(path)
+        except Exception:
+            Path(tmp_path).unlink(missing_ok=True)
+            raise
+
+        return ToolResult(tool_name=self.name, success=True, output=f"Edited: {path}")
 
     async def _mkdir(self, path: Path) -> ToolResult:
         path.mkdir(parents=True, exist_ok=True)

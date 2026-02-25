@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import AsyncGenerator
+from typing import Any
 
 import litellm
 import structlog
 
 from hauba.core.config import ConfigManager
-from hauba.core.types import LLMMessage, LLMResponse
+from hauba.core.types import LLMMessage, LLMResponse, LLMResponseWithTools, LLMToolCall
 from hauba.exceptions import HaubaError
 
 logger = structlog.get_logger()
@@ -40,19 +42,14 @@ class LLMRouter:
         """Configure litellm based on settings."""
         settings = self._config.settings.llm
         if settings.api_key and settings.provider != "ollama":
-            # Set the API key for the provider
+            import os
+
             if settings.provider == "anthropic":
                 litellm.api_key = settings.api_key
-                import os
-
                 os.environ["ANTHROPIC_API_KEY"] = settings.api_key
             elif settings.provider == "openai":
-                import os
-
                 os.environ["OPENAI_API_KEY"] = settings.api_key
             elif settings.provider == "deepseek":
-                import os
-
                 os.environ["DEEPSEEK_API_KEY"] = settings.api_key
 
     def _get_model_string(self) -> str:
@@ -74,12 +71,12 @@ class LLMRouter:
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> LLMResponse:
-        """Send a completion request to the LLM."""
+        """Send a completion request to the LLM (no tools)."""
         settings = self._config.settings.llm
         model = self._get_model_string()
         msg_dicts = [{"role": m.role, "content": m.content} for m in messages]
 
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "model": model,
             "messages": msg_dicts,
             "max_tokens": max_tokens or settings.max_tokens,
@@ -144,6 +141,133 @@ class LLMRouter:
             finish_reason=response.choices[0].finish_reason or "",
         )
 
+    async def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> LLMResponseWithTools:
+        """Send a completion request with native tool/function calling.
+
+        Args:
+            messages: Conversation messages in OpenAI format (dicts with role/content).
+            tools: Tool definitions in OpenAI function calling format.
+            max_tokens: Max response tokens.
+            temperature: Sampling temperature.
+
+        Returns:
+            LLMResponseWithTools with content and/or tool_calls.
+        """
+        settings = self._config.settings.llm
+        model = self._get_model_string()
+
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens or settings.max_tokens,
+            "temperature": temperature if temperature is not None else 0.2,
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        if settings.api_key and settings.provider != "ollama":
+            kwargs["api_key"] = settings.api_key
+        if settings.base_url:
+            kwargs["api_base"] = settings.base_url
+
+        start = time.monotonic()
+        last_exc: Exception | None = None
+        response = None
+
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = await litellm.acompletion(**kwargs)
+                break
+            except Exception as exc:
+                last_exc = exc
+                safe_msg = self._sanitize_error(str(exc))
+                if attempt < MAX_RETRIES and self._is_retryable(str(exc)):
+                    delay = RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR**attempt)
+                    logger.warning(
+                        "llm.tool_retry",
+                        model=model,
+                        attempt=attempt + 1,
+                        delay=f"{delay:.1f}s",
+                        error=safe_msg,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                logger.error("llm.tool_error", model=model, error=safe_msg)
+                raise HaubaError(f"LLM tool call failed: {safe_msg}") from exc
+
+        if response is None:
+            safe_msg = self._sanitize_error(str(last_exc))
+            raise HaubaError(
+                f"LLM tool call failed after {MAX_RETRIES} retries: {safe_msg}"
+            ) from last_exc
+
+        elapsed = time.monotonic() - start
+        message = response.choices[0].message
+        content = message.content or ""
+        usage = response.usage
+        tokens = (usage.total_tokens if usage else 0) or 0
+        cost = litellm.completion_cost(completion_response=response) if usage else 0.0
+
+        self._total_tokens += tokens
+        self._total_cost += cost
+        self._call_count += 1
+
+        # Parse tool calls from response
+        tool_calls: list[LLMToolCall] = []
+        if hasattr(message, "tool_calls") and message.tool_calls:
+            for tc in message.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+                tool_calls.append(
+                    LLMToolCall(
+                        id=tc.id or f"call_{len(tool_calls)}",
+                        name=tc.function.name,
+                        arguments=args,
+                    )
+                )
+
+        logger.info(
+            "llm.tool_response",
+            model=model,
+            tokens=tokens,
+            cost=f"${cost:.4f}",
+            elapsed=f"{elapsed:.2f}s",
+            tool_calls=len(tool_calls),
+        )
+
+        return LLMResponseWithTools(
+            content=content,
+            tool_calls=tool_calls,
+            model=model,
+            tokens_used=tokens,
+            cost=cost,
+            finish_reason=response.choices[0].finish_reason or "",
+        )
+
+    async def test_connection(self) -> tuple[bool, str]:
+        """Test the LLM connection with a minimal request.
+
+        Returns:
+            (success, message) tuple.
+        """
+        try:
+            response = await self.complete(
+                [LLMMessage(role="user", content="Say 'ok'")],
+                max_tokens=10,
+                temperature=0.0,
+            )
+            return True, f"Connected to {response.model}"
+        except Exception as exc:
+            return False, str(exc)
+
     async def stream(
         self,
         messages: list[LLMMessage],
@@ -155,7 +279,7 @@ class LLMRouter:
         model = self._get_model_string()
         msg_dicts = [{"role": m.role, "content": m.content} for m in messages]
 
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "model": model,
             "messages": msg_dicts,
             "max_tokens": max_tokens or settings.max_tokens,
@@ -187,7 +311,9 @@ class LLMRouter:
                 logger.error("llm.stream_error", model=model, error=safe_msg)
                 raise HaubaError(f"LLM stream failed: {safe_msg}") from exc
         safe_msg = self._sanitize_error(str(last_exc))
-        raise HaubaError(f"LLM stream failed after {MAX_RETRIES} retries: {safe_msg}") from last_exc
+        raise HaubaError(
+            f"LLM stream failed after {MAX_RETRIES} retries: {safe_msg}"
+        ) from last_exc
 
     @staticmethod
     def _is_retryable(error_msg: str) -> bool:
@@ -199,7 +325,6 @@ class LLMRouter:
         """Remove API keys from error messages."""
         import re
 
-        # Mask any sk-proj-... or sk-... tokens
         sanitized = re.sub(r"sk-[A-Za-z0-9_-]{10,}", "sk-***REDACTED***", msg)
         return sanitized
 

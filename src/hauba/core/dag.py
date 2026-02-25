@@ -7,6 +7,7 @@ spawns parallel SubAgents, blocks dependent milestones until predecessors comple
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import structlog
 
@@ -31,10 +32,12 @@ class DAGExecutor:
         config: ConfigManager,
         events: EventEmitter,
         ledger: TaskLedger | None = None,
+        workspace: Path | None = None,
     ) -> None:
         self._config = config
         self._events = events
         self._ledger = ledger
+        self._workspace = workspace
         self._milestones: dict[str, Milestone] = {}
         self._results: dict[str, Result] = {}
         self._completion_events: dict[str, asyncio.Event] = {}
@@ -134,6 +137,7 @@ class DAGExecutor:
             events=self._events,
             milestone=milestone,
             ledger=self._ledger,
+            workspace=self._workspace,
         )
 
         try:

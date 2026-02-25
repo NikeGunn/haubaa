@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 
 from hauba.core.types import ToolResult
@@ -15,20 +17,38 @@ class GitTool(BaseTool):
     """Git operations: status, add, commit, push, pull, diff, log."""
 
     name = "git"
-    description = "Execute git operations"
+    description = "Execute git operations like status, add, commit, push, pull, diff, log, and init."
 
     def __init__(self, cwd: str | None = None) -> None:
         self._bash = BashTool(cwd=cwd)
 
-    async def execute(self, **kwargs: object) -> ToolResult:
-        """Execute a git operation.
+    def _parameters_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["status", "add", "commit", "push", "pull", "diff", "log", "init"],
+                    "description": "The git operation to perform.",
+                },
+                "files": {
+                    "type": "string",
+                    "description": "Files to add (for 'add' action). Default '.'",
+                },
+                "message": {
+                    "type": "string",
+                    "description": "Commit message (for 'commit' action).",
+                },
+                "args": {
+                    "type": "string",
+                    "description": "Additional git arguments.",
+                },
+            },
+            "required": ["action"],
+        }
 
-        Args:
-            action: status | add | commit | push | pull | diff | log | init
-            files: Files to add (for 'add' action).
-            message: Commit message (for 'commit' action).
-            args: Additional git arguments.
-        """
+    async def execute(self, **kwargs: object) -> ToolResult:
+        """Execute a git operation."""
         action = str(kwargs.get("action", ""))
         if not action:
             return ToolResult(tool_name=self.name, success=False, error="No action specified")
@@ -55,7 +75,6 @@ class GitTool(BaseTool):
             return f"git add {files}"
         elif action == "commit":
             message = str(kwargs.get("message", "Auto-commit by Hauba"))
-            # Escape quotes in message
             safe_msg = message.replace('"', '\\"')
             return f'git commit -m "{safe_msg}"'
         elif action == "push":

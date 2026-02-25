@@ -131,3 +131,5 @@ BUNDLED_STRATEGIES_DIR = Path(__file__).resolve().parent.parent / "bundled_strat
 DEFAULT_SUBAGENT_THINK_TIME = 10.0
 DEFAULT_WORKER_TIMEOUT = 300.0  # 5 minutes
 DEFAULT_MAX_PARALLEL_WORKERS = 4
+DEFAULT_MAX_AGENT_ITERATIONS = 50  # Max agentic loop iterations (prevent infinite loops)
+DEFAULT_MAX_WORKER_ITERATIONS = 25  # Max iterations for worker agentic loops
