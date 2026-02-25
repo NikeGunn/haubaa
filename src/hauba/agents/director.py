@@ -207,9 +207,7 @@ class DirectorAgent(BaseAgent):
         """Get OpenAI-compatible tool schemas for all registered tools."""
         return [tool.tool_schema for tool in self._tools.values()]
 
-    def _build_system_prompt(
-        self, workspace: Path | None = None, skill_context: str = ""
-    ) -> str:
+    def _build_system_prompt(self, workspace: Path | None = None, skill_context: str = "") -> str:
         """Build the system prompt with workspace directory and skill context.
 
         Args:
@@ -471,9 +469,7 @@ class DirectorAgent(BaseAgent):
             f"Partial output:\n" + "\n".join(all_outputs[-10:])
         )
 
-    async def _execute_multi_agent(
-        self, plan: Plan, skill_context: str = ""
-    ) -> Result:
+    async def _execute_multi_agent(self, plan: Plan, skill_context: str = "") -> Result:
         """Execute complex plans via DAG with SubAgent teams."""
         from hauba.core.dag import DAGExecutor
 
