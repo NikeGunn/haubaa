@@ -159,11 +159,13 @@ class Worker(BaseAgent):
                 tool = self._tools.get(tool_call.name)
 
                 if tool is None:
-                    conversation.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": f"Unknown tool: {tool_call.name}",
-                    })
+                    conversation.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": f"Unknown tool: {tool_call.name}",
+                        }
+                    )
                     continue
 
                 await self.events.emit(
@@ -202,13 +204,17 @@ class Worker(BaseAgent):
                 if not result_content:
                     result_content = "OK" if tool_result.success else "Failed with no output"
 
-                conversation.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": result_content,
-                })
+                conversation.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": result_content,
+                    }
+                )
 
-        return Result.fail(f"Worker did not complete within {DEFAULT_MAX_WORKER_ITERATIONS} iterations")
+        return Result.fail(
+            f"Worker did not complete within {DEFAULT_MAX_WORKER_ITERATIONS} iterations"
+        )
 
     async def review(self, result: Result) -> Result:
         """Workers don't self-review — SubAgent reviews them."""

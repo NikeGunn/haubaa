@@ -303,11 +303,13 @@ class DirectorAgent(BaseAgent):
                 if tool is None:
                     # Unknown tool — tell the LLM
                     error_msg = f"Unknown tool: {tool_call.name}. Available tools: {', '.join(self._tools.keys())}"
-                    conversation.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": error_msg,
-                    })
+                    conversation.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": error_msg,
+                        }
+                    )
                     continue
 
                 # Emit tool called event
@@ -349,11 +351,13 @@ class DirectorAgent(BaseAgent):
                 if not result_content:
                     result_content = "OK" if tool_result.success else "Failed with no output"
 
-                conversation.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": result_content,
-                })
+                conversation.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": result_content,
+                    }
+                )
 
                 if tool_result.output:
                     all_outputs.append(f"[{tool_call.name}] {tool_result.output[:200]}")

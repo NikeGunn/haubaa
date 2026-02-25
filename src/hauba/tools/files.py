@@ -27,7 +27,16 @@ class FileTool(BaseTool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["read", "write", "append", "edit", "mkdir", "list", "exists", "delete"],
+                    "enum": [
+                        "read",
+                        "write",
+                        "append",
+                        "edit",
+                        "mkdir",
+                        "list",
+                        "exists",
+                        "delete",
+                    ],
                     "description": "The file operation to perform.",
                 },
                 "path": {

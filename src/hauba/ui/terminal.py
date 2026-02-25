@@ -131,13 +131,9 @@ class TerminalUI:
                     f"  [bold blue]{_SYM_FILE} write[/bold blue] [dim]{path} ({lines} lines)[/dim]"
                 )
             elif action == "edit":
-                self._console.print(
-                    f"  [bold blue]{_SYM_EDIT} edit[/bold blue] [dim]{path}[/dim]"
-                )
+                self._console.print(f"  [bold blue]{_SYM_EDIT} edit[/bold blue] [dim]{path}[/dim]")
             elif action == "read":
-                self._console.print(
-                    f"  [bold blue]{_SYM_FILE} read[/bold blue] [dim]{path}[/dim]"
-                )
+                self._console.print(f"  [bold blue]{_SYM_FILE} read[/bold blue] [dim]{path}[/dim]")
             else:
                 self._console.print(
                     f"  [bold blue]{_SYM_FILE} {action}[/bold blue] [dim]{path}[/dim]"

@@ -311,9 +311,7 @@ class LLMRouter:
                 logger.error("llm.stream_error", model=model, error=safe_msg)
                 raise HaubaError(f"LLM stream failed: {safe_msg}") from exc
         safe_msg = self._sanitize_error(str(last_exc))
-        raise HaubaError(
-            f"LLM stream failed after {MAX_RETRIES} retries: {safe_msg}"
-        ) from last_exc
+        raise HaubaError(f"LLM stream failed after {MAX_RETRIES} retries: {safe_msg}") from last_exc
 
     @staticmethod
     def _is_retryable(error_msg: str) -> bool:

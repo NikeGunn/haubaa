@@ -10,7 +10,7 @@ import pytest
 from hauba.agents.director import DirectorAgent
 from hauba.core.config import ConfigManager
 from hauba.core.events import EventEmitter
-from hauba.core.types import LLMResponse
+from hauba.core.types import LLMResponse, LLMResponseWithTools, LLMToolCall
 
 MOCK_DELIBERATION_RESPONSE = """UNDERSTANDING:
 The user wants to create a simple Python hello world script.
@@ -26,15 +26,6 @@ RISKS:
 
 CONFIDENCE: 0.95
 """
-
-MOCK_EXECUTE_RESPONSE = """TOOL: files
-ARGS:
-action: write
-path: {path}/hello.py
-content: print("Hello, World!")
-"""
-
-MOCK_STATUS_RESPONSE = """STATUS: done - File created successfully."""
 
 
 @pytest.fixture
@@ -74,43 +65,56 @@ async def test_full_pipeline_creates_hello_world(config: ConfigManager, tmp_path
 
     events.on("*", track_all)
 
-    # Mock LLM responses
-    call_count = 0
     work_dir = tmp_path / "workspace"
     work_dir.mkdir()
 
+    # Mock deliberation LLM (uses complete() — no tools)
     async def mock_complete(messages, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            # Deliberation response
-            return LLMResponse(
-                content=MOCK_DELIBERATION_RESPONSE,
-                model="mock",
-                tokens_used=100,
-            )
-        elif call_count == 2:
-            # Execution: tool call
-            return LLMResponse(
-                content=MOCK_EXECUTE_RESPONSE.format(path=str(work_dir)),
+        return LLMResponse(
+            content=MOCK_DELIBERATION_RESPONSE,
+            model="mock",
+            tokens_used=100,
+        )
+
+    # Mock agentic loop LLM (uses complete_with_tools())
+    tool_call_count = 0
+
+    async def mock_complete_with_tools(messages, tools=None, **kwargs):
+        nonlocal tool_call_count
+        tool_call_count += 1
+        if tool_call_count == 1:
+            # First call: create the hello.py file
+            return LLMResponseWithTools(
+                content="",
+                tool_calls=[
+                    LLMToolCall(
+                        id="call_1",
+                        name="files",
+                        arguments={
+                            "action": "write",
+                            "path": str(work_dir / "hello.py"),
+                            "content": 'print("Hello, World!")',
+                        },
+                    )
+                ],
                 model="mock",
                 tokens_used=50,
             )
         else:
-            # Status assessment
-            return LLMResponse(
-                content=MOCK_STATUS_RESPONSE,
+            # Second call: done — return text summary
+            return LLMResponseWithTools(
+                content="Created hello.py with a Hello World program.",
+                tool_calls=[],
                 model="mock",
                 tokens_used=20,
             )
 
-    director = DirectorAgent(config=config, events=events)
+    director = DirectorAgent(config=config, events=events, workspace=work_dir)
 
-    # Patch the LLM router's complete method
+    # Patch LLM methods
     director._llm.complete = mock_complete
-    # Patch deliberation engine's LLM too
+    director._llm.complete_with_tools = mock_complete_with_tools
     director._deliberation._llm.complete = mock_complete
-    # Set think time to 0 for tests
     director._deliberation._think_time = 0.0
 
     result = await director.run("create a Python hello world")
@@ -133,7 +137,7 @@ async def test_full_pipeline_creates_hello_world(config: ConfigManager, tmp_path
 
     print(f"\n✓ E2E test passed! Created {hello_file}")
     print(f"  File content: {content.strip()}")
-    print(f"  LLM calls: {call_count}")
+    print(f"  Tool calls: {tool_call_count}")
     print(f"  Events emitted: {len(emitted)}")
 
 

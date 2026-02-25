@@ -17,7 +17,9 @@ class GitTool(BaseTool):
     """Git operations: status, add, commit, push, pull, diff, log."""
 
     name = "git"
-    description = "Execute git operations like status, add, commit, push, pull, diff, log, and init."
+    description = (
+        "Execute git operations like status, add, commit, push, pull, diff, log, and init."
+    )
 
     def __init__(self, cwd: str | None = None) -> None:
         self._bash = BashTool(cwd=cwd)
