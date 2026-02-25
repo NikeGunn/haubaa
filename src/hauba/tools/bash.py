@@ -67,14 +67,26 @@ class BashTool(BaseTool):
         try:
             # Platform-aware shell execution
             if sys.platform == "win32":
-                # On Windows, prefer Git Bash if available, else cmd.exe
-                proc = await asyncio.create_subprocess_shell(
-                    command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=cwd or None,
-                    # Use cmd.exe on Windows — Git Bash commands still work via shell
-                )
+                # On Windows try Git Bash first (supports Unix commands), fallback to cmd
+                import shutil
+
+                bash_exe = shutil.which("bash") or shutil.which("bash.exe")
+                if bash_exe:
+                    proc = await asyncio.create_subprocess_exec(
+                        bash_exe,
+                        "-c",
+                        command,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        cwd=cwd or None,
+                    )
+                else:
+                    proc = await asyncio.create_subprocess_shell(
+                        command,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        cwd=cwd or None,
+                    )
             else:
                 proc = await asyncio.create_subprocess_shell(
                     command,

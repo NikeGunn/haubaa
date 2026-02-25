@@ -21,6 +21,16 @@ class FileTool(BaseTool):
     name = "files"
     description = "Read, write, edit files and create directories. Use action='write' to create new files, action='read' to read existing files, action='edit' for search-and-replace edits, action='mkdir' to create directories."
 
+    def __init__(self, base_dir: Path | None = None) -> None:
+        self._base_dir = base_dir
+
+    def _resolve(self, path_str: str) -> Path:
+        """Resolve a path, making relative paths absolute against base_dir."""
+        p = Path(path_str)
+        if not p.is_absolute() and self._base_dir:
+            return self._base_dir / p
+        return p
+
     def _parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
@@ -79,7 +89,7 @@ class FileTool(BaseTool):
                 error="Both 'action' and 'path' are required",
             )
 
-        path = Path(path_str)
+        path = self._resolve(path_str)
 
         try:
             if action == "read":

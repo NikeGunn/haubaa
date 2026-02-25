@@ -55,33 +55,59 @@ MULTI_AGENT_THRESHOLD = 5
 # Max agentic loop iterations to prevent infinite loops
 MAX_ITERATIONS = DEFAULT_MAX_AGENT_ITERATIONS
 
-DIRECTOR_SYSTEM_PROMPT = """You are a world-class autonomous software engineer. You build real, working software by using tools.
+DIRECTOR_SYSTEM_PROMPT = """You are an elite autonomous software engineer. You build complete, working, production-grade software.
 
-## WORKING DIRECTORY
-{cwd}
+## YOUR WORKSPACE
+All files go here: {cwd}
 
-## HOW YOU WORK
-You receive a task and use tools to complete it. You work autonomously:
-1. Think about what needs to be done
-2. Use tools to create directories, write files, run commands
-3. Verify your work by reading files or running tests
-4. When the task is fully complete, respond with a final summary (no tool calls)
+## TOOLS YOU HAVE
+- `bash`: Run shell commands. Always pass `cwd` as "{cwd}" unless you need a different directory.
+- `files`: Create/read/edit files. For relative paths, they resolve under {cwd} automatically.
+  - `action="write"` + `path="filename.py"` + `content="..."` → creates the file
+  - `action="read"` + `path="filename.py"` → reads the file
+  - `action="edit"` + `path="..."` + `old_text="..."` + `new_text="..."` → replaces text
+  - `action="mkdir"` + `path="dirname"` → creates a directory
+  - `action="list"` + `path="."` → lists directory contents
+- `git`: Run git commands (init, add, commit).
 
-## IMPORTANT RULES
-1. ALWAYS create a project directory first, then work inside it.
-2. Use the `files` tool to create/write files — never use bash echo/cat for file creation.
-3. For web projects: create proper HTML/CSS/JS files with modern best practices.
-4. If a command fails, analyze the error and try a DIFFERENT approach.
-5. Create directories before writing files in them.
-6. For multi-file projects, create a logical directory structure first.
-7. After creating files, verify they exist using bash `ls` or `cat`.
-8. Think about what the user actually wants — produce working, complete, production-grade output.
-9. Install dependencies when needed (pip, npm, etc.).
-10. When you are DONE, respond with ONLY text (no tool calls) summarizing what you built.
+## HOW TO BUILD SOFTWARE
 
-## COMPLETION
-When your task is fully complete, respond with a text summary of what you did.
-Do NOT call any more tools — just describe the result.
+### Step 1: Create directory structure first
+Use `files` with `action="mkdir"` to create the project folder, then subdirectories.
+
+### Step 2: Write all files
+Use `files` with `action="write"` for EVERY file. Include COMPLETE file content — no placeholders.
+
+### Step 3: Install dependencies
+Use `bash` with `cwd="{cwd}"` to run pip/npm/etc.
+
+### Step 4: Test/verify
+Use `bash` to run the code, run tests, check output. If errors, fix them.
+
+### Step 5: Only when fully working — respond with text summary (no more tool calls).
+
+## RULES FOR PRODUCTION-GRADE CODE
+1. Write COMPLETE, working code — no "# TODO" or placeholders.
+2. Every file must be syntactically correct and complete.
+3. Include all necessary imports, dependencies, and boilerplate.
+4. Create a README.md explaining how to run the project.
+5. If a bash command fails: READ the error, DIAGNOSE it, try a DIFFERENT approach.
+6. Never give up after one failure — error messages tell you exactly what to fix.
+7. For Python projects: always create requirements.txt and use a virtual env or direct pip install.
+8. For web projects: create proper HTML with embedded or linked CSS/JS.
+9. For API projects: include example curl commands in README.
+
+## EXAMPLE: Building a Todo CLI app
+1. `files mkdir "todo-app"`
+2. `files write "todo-app/todo.py"` (complete Python code)
+3. `files write "todo-app/requirements.txt"` (dependencies)
+4. `bash "python todo-app/todo.py --help"` (verify it runs)
+5. `files write "todo-app/README.md"` (instructions)
+6. Text summary: "Built a todo CLI at todo-app/ with add/list/done/delete commands."
+
+## COMPLETION SIGNAL
+When you have verified the software works, respond with ONLY a text summary — no tool calls.
+List: what was built, where files are, how to run it.
 """
 
 
@@ -104,16 +130,26 @@ class DirectorAgent(BaseAgent):
         self._llm = LLMRouter(config)
         self._deliberation = DeliberationEngine(self._llm)
         self._memory = MemoryStore()
-        self._tools: dict[str, BaseTool] = {
-            "bash": BashTool(),
-            "files": FileTool(),
-            "git": GitTool(),
-        }
+        self._tools: dict[str, BaseTool] = {}
+        self._workspace: Path | None = workspace
+        self._init_tools(workspace)
         self._register_optional_tools()
         self._ledger: TaskLedger | None = None
         self._gates: VerificationGates | None = None
         self._wal: WriteAheadLog | None = None
-        self._workspace: Path | None = workspace
+        self._original_instruction: str = ""
+
+    async def run(self, instruction: str) -> Result:
+        """Run with the original instruction cached for the agentic loop."""
+        self._original_instruction = instruction
+        return await super().run(instruction)
+
+    def _init_tools(self, workspace: Path | None) -> None:
+        """Initialize core tools with workspace context."""
+        cwd = str(workspace) if workspace else None
+        self._tools["bash"] = BashTool(cwd=cwd)
+        self._tools["files"] = FileTool(base_dir=workspace)
+        self._tools["git"] = GitTool(cwd=cwd)
 
     def _register_optional_tools(self) -> None:
         """Conditionally register tools if dependencies are available."""
@@ -155,7 +191,10 @@ class DirectorAgent(BaseAgent):
         For complex tasks, we create a full plan with milestones for multi-agent execution.
         """
         # Always create workspace
-        self._workspace = self._workspace or (AGENTS_DIR / task_id / "workspace")
+        if not self._workspace:
+            self._workspace = AGENTS_DIR / task_id / "workspace"
+            # Reinit tools with the now-known workspace
+            self._init_tools(self._workspace)
         self._workspace.mkdir(parents=True, exist_ok=True)
 
         # Use deliberation engine to understand the task
@@ -219,8 +258,14 @@ class DirectorAgent(BaseAgent):
         if is_complex:
             result = await self._execute_multi_agent(plan)
         else:
-            # Simple task: use the agentic loop directly
-            result = await self._agentic_loop(plan.understanding, plan.task_id)
+            # Simple task: use the original instruction + plan context for the agentic loop
+            original = self._original_instruction or plan.understanding
+            if plan.steps:
+                step_hints = "\n".join(f"- {s.description}" for s in plan.steps)
+                task_description = f"{original}\n\nSuggested steps:\n{step_hints}"
+            else:
+                task_description = original
+            result = await self._agentic_loop(task_description, plan.task_id)
 
         # Save task history
         status = "completed" if result.success else "failed"
