@@ -178,9 +178,7 @@ async def _run_task_engine(task: str, workspace_path: str = "") -> None:
         "ollama": ProviderType.OLLAMA,
         "deepseek": ProviderType.OPENAI,  # DeepSeek is OpenAI-compatible
     }
-    provider = provider_map.get(
-        config.settings.llm.provider, ProviderType.ANTHROPIC
-    )
+    provider = provider_map.get(config.settings.llm.provider, ProviderType.ANTHROPIC)
 
     # DeepSeek needs a custom base URL
     base_url = None
@@ -472,9 +470,7 @@ def engine_run(
     asyncio.run(_engine_run(task, provider, api_key, model, workspace))
 
 
-async def _engine_run(
-    task: str, provider: str, api_key: str, model: str, workspace: str
-) -> None:
+async def _engine_run(task: str, provider: str, api_key: str, model: str, workspace: str) -> None:
     """Execute a task using the Copilot Engine."""
     from hauba.engine.copilot_engine import CopilotEngine
     from hauba.engine.types import EngineConfig, ProviderType
@@ -489,9 +485,7 @@ async def _engine_run(
         env_var = env_map.get(provider, "")
         api_key = os.environ.get(env_var, "")
         if not api_key and provider != "ollama":
-            console.print(
-                f"[red]No API key provided. Use --api-key or set {env_var}[/red]"
-            )
+            console.print(f"[red]No API key provided. Use --api-key or set {env_var}[/red]")
             raise typer.Exit(1)
 
     # Default models per provider
