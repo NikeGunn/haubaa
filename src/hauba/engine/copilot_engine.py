@@ -15,9 +15,6 @@ Architecture:
 
 from __future__ import annotations
 
-import os
-import shutil
-import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -28,34 +25,6 @@ import structlog
 from hauba.engine.types import EngineConfig, EngineEvent, EngineResult
 
 logger = structlog.get_logger()
-
-
-def _find_copilot_cli() -> str | None:
-    """Auto-detect the Copilot CLI binary location."""
-    # 1. Check PATH for copilot / copilot.cmd / copilot.exe
-    for name in ("copilot", "copilot.cmd", "copilot.exe"):
-        path = shutil.which(name)
-        if path:
-            return path
-
-    # 2. Check npm global install location
-    if sys.platform == "win32":
-        npm_prefix = os.environ.get("APPDATA", "")
-        candidates = [
-            os.path.join(npm_prefix, "npm", "copilot.cmd"),
-            os.path.join(npm_prefix, "npm", "copilot"),
-        ]
-    else:
-        candidates = [
-            "/usr/local/bin/copilot",
-            os.path.expanduser("~/.npm-global/bin/copilot"),
-        ]
-
-    for candidate in candidates:
-        if os.path.isfile(candidate):
-            return candidate
-
-    return None
 
 
 class CopilotEngine:
@@ -85,12 +54,16 @@ class CopilotEngine:
         self._session: Any = None
         self._events: list[EngineEvent] = []
         self._event_handlers: list[Callable[[EngineEvent], None]] = []
-        self._cli_path = config.copilot_cli_path or _find_copilot_cli()
 
     @property
     def is_available(self) -> bool:
-        """Check if the Copilot CLI is available."""
-        return self._cli_path is not None
+        """Check if the Copilot SDK is available."""
+        try:
+            import copilot  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
 
     async def start(self) -> None:
         """Initialize the Copilot SDK client and verify connection."""
@@ -99,15 +72,14 @@ class CopilotEngine:
         except ImportError:
             raise RuntimeError("Copilot SDK not installed. Run: pip install github-copilot-sdk")
 
-        if not self._cli_path:
-            raise RuntimeError(
-                "Copilot CLI not found. Install with: npm install -g @github/copilot\n"
-                "Or provide copilot_cli_path in EngineConfig."
-            )
+        # Build client options — SDK bundles its own CLI binary (auto_start=True)
+        client_options: dict[str, Any] = {}
+        if self._config.copilot_cli_path:
+            client_options["cli_path"] = self._config.copilot_cli_path
 
-        logger.info("engine.starting", cli_path=self._cli_path)
+        logger.info("engine.starting")
 
-        self._client = CopilotClient({"cli_path": self._cli_path})
+        self._client = CopilotClient(client_options or None)
         await self._client.start()
 
         # Verify connection

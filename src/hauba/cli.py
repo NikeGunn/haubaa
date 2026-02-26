@@ -202,7 +202,7 @@ async def _run_task_engine(task: str, workspace_path: str = "") -> None:
 
     if not engine.is_available:
         console.print(
-            "[yellow]Copilot CLI not found. Install with: npm install -g @github/copilot[/yellow]"
+            "[yellow]Copilot SDK not found. Install with: pip install github-copilot-sdk[/yellow]"
         )
         console.print("[dim]Falling back to legacy Director agent...[/dim]")
         await _run_task_legacy(task, workspace_path)

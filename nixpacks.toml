@@ -1,15 +1,13 @@
 [phases.setup]
-nixPkgs = ["python312", "python312Packages.pip", "nodejs_20"]
+nixPkgs = ["python312", "python312Packages.pip"]
 
 [variables]
 PIP_BREAK_SYSTEM_PACKAGES = "1"
 
 [phases.install]
 cmds = [
-    "pip install --upgrade pip",
-    "pip install 'uvicorn[standard]' fastapi structlog pydantic",
-    "pip install -e . || pip install -e '.[engine]' || echo 'hauba package install skipped'",
-    "npm install -g @github/copilot || echo 'Copilot CLI install skipped (optional)'"
+    "pip install 'uvicorn[standard]' fastapi structlog pydantic github-copilot-sdk",
+    "pip install -e ."
 ]
 
 [start]

@@ -31,26 +31,26 @@ from pathlib import Path
 # ── Pre-flight: ensure copilot CLI is available ─────────────────────────────
 
 
-def _ensure_copilot_cli() -> None:
-    """Install the Copilot CLI if not already present."""
-    import shutil
-
-    if shutil.which("copilot") or shutil.which("copilot.cmd"):
-        return
-
-    print("[hauba] Copilot CLI not found. Installing via npm...")
+def _ensure_copilot_sdk() -> None:
+    """Verify the Copilot SDK is available (installed via pip)."""
     try:
-        subprocess.run(
-            ["npm", "install", "-g", "@github/copilot"],
-            check=True,
-            timeout=120,
-            capture_output=True,
-            text=True,
-        )
-        print("[hauba] Copilot CLI installed successfully.")
-    except Exception as e:
-        print(f"[hauba] Warning: Could not install Copilot CLI: {e}")
-        print("[hauba] API will serve but task execution may fail.")
+        import copilot  # noqa: F401
+
+        print("[hauba] Copilot SDK available.")
+    except ImportError:
+        print("[hauba] Copilot SDK not found. Installing via pip...")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "github-copilot-sdk"],
+                check=True,
+                timeout=120,
+                capture_output=True,
+                text=True,
+            )
+            print("[hauba] Copilot SDK installed successfully.")
+        except Exception as e:
+            print(f"[hauba] Warning: Could not install Copilot SDK: {e}")
+            print("[hauba] API will serve but task execution may fail.")
 
 
 # ── GitHub release cache ─────────────────────────────────────────────────────
@@ -1044,7 +1044,7 @@ LANDING_PAGE = """\
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 8080))
 
-    _ensure_copilot_cli()
+    _ensure_copilot_sdk()
 
     app = create_server_app()
 
