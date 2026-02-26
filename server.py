@@ -96,8 +96,16 @@ BASE_DIR = Path(__file__).parent
 # Load install scripts
 _install_sh_path = BASE_DIR / "install.sh"
 _install_ps1_path = BASE_DIR / "install.ps1"
-INSTALL_SH = _install_sh_path.read_text(encoding="utf-8") if _install_sh_path.exists() else "echo 'pip install hauba'"
-INSTALL_PS1 = _install_ps1_path.read_text(encoding="utf-8") if _install_ps1_path.exists() else "pip install hauba"
+INSTALL_SH = (
+    _install_sh_path.read_text(encoding="utf-8")
+    if _install_sh_path.exists()
+    else "echo 'pip install hauba'"
+)
+INSTALL_PS1 = (
+    _install_ps1_path.read_text(encoding="utf-8")
+    if _install_ps1_path.exists()
+    else "pip install hauba"
+)
 
 # Load favicon
 _favicon_path = BASE_DIR / "static" / "favicon.png"
@@ -186,6 +194,8 @@ def create_server_app():
     # ── AI Engineer API ───────────────────────────────────────────────────
 
     try:
+        import asyncio
+
         from hauba.api.server import (
             SUPPORTED_MODELS,
             TaskRequest,
@@ -195,25 +205,26 @@ def create_server_app():
             _tasks,
         )
 
-        import asyncio
-
         @app.get("/api/v1/models")
         async def list_models():
             return SUPPORTED_MODELS
 
         @app.post("/api/v1/tasks", response_model=TaskResponse)
         async def submit_task(request: TaskRequest):
-            from hauba.engine.types import ProviderType
             import uuid
+
+            from hauba.engine.types import ProviderType
 
             if request.provider != "ollama" and not request.api_key:
                 from fastapi import HTTPException
+
                 raise HTTPException(400, "API key required (BYOK).")
 
             try:
                 ProviderType(request.provider)
             except ValueError:
                 from fastapi import HTTPException
+
                 raise HTTPException(400, f"Unknown provider: {request.provider}")
 
             task_id = str(uuid.uuid4())
@@ -1043,7 +1054,8 @@ if __name__ == "__main__":
         print("[hauba] Installing uvicorn...")
         subprocess.run(
             [sys.executable, "-m", "pip", "install", "uvicorn[standard]"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         import uvicorn
 

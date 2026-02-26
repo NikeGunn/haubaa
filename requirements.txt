@@ -1,2 +1,6 @@
-# No dependencies needed for the hauba.tech server (pure stdlib).
-# For hauba development: pip install -e ".[dev]"
+# Railway deployment dependencies
+# Full dependency list is in pyproject.toml — this file helps Nixpacks detect Python.
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+structlog>=23.1.0
+pydantic>=2.0.0

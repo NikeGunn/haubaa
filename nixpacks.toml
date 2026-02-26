@@ -1,8 +1,13 @@
 [phases.setup]
-nixPkgs = ["python312"]
+nixPkgs = ["python312", "python312Packages.pip", "nodejs_20"]
 
 [phases.install]
-cmds = ["echo 'No install needed — server.py uses only Python stdlib'"]
+cmds = [
+    "pip install --upgrade pip",
+    "pip install -e '.[engine]'",
+    "pip install uvicorn[standard] fastapi",
+    "npm install -g @github/copilot || echo 'Copilot CLI install skipped (optional)'"
+]
 
 [start]
 cmd = "python server.py"
