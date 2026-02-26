@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hauba"
-version = "0.1.4"
-description = "Your AI Engineering Team — In One Command"
+version = "0.2.0"
+description = "AI Software Engineer as a Service — Powered by Copilot SDK"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -57,11 +57,15 @@ channels = [
     "python-telegram-bot>=21.0,<22.0",
     "discord.py>=2.3,<3.0",
 ]
+engine = [
+    "github-copilot-sdk>=0.1.0",
+]
 all = [
     "hauba[computer-use]",
     "hauba[voice]",
     "hauba[web]",
     "hauba[channels]",
+    "hauba[engine]",
 ]
 dev = [
     "pytest>=8.0,<9.0",

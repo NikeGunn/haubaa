@@ -2,7 +2,7 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "echo 'No dependencies needed for server.py'"
+    "buildCommand": "pip install -e . && pip install uvicorn[standard] fastapi && npm install -g @github/copilot"
   },
   "deploy": {
     "startCommand": "python server.py",

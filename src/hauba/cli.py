@@ -145,14 +145,115 @@ def run(
         "-w",
         help="Output directory for generated files (default: ./hauba-output/)",
     ),
+    legacy: bool = typer.Option(
+        False,
+        "--legacy",
+        help="Use legacy litellm-based Director agent instead of Copilot SDK engine",
+    ),
 ) -> None:
-    """Run a task with your AI engineering team."""
+    """Run a task with your AI engineering team.
+
+    By default uses the Copilot SDK engine (production-tested, BYOK).
+    Use --legacy for the original litellm-based Director agent.
+    """
     _check_init()
-    asyncio.run(_run_task(task, workspace))
+    if legacy:
+        asyncio.run(_run_task_legacy(task, workspace))
+    else:
+        asyncio.run(_run_task_engine(task, workspace))
 
 
-async def _run_task(task: str, workspace_path: str = "") -> None:
-    """Execute a task using the Director agent."""
+async def _run_task_engine(task: str, workspace_path: str = "") -> None:
+    """Execute a task using the Copilot SDK engine (new default)."""
+    from hauba.core.config import ConfigManager
+    from hauba.engine.copilot_engine import CopilotEngine
+    from hauba.engine.types import EngineConfig, ProviderType
+
+    config = ConfigManager()
+
+    # Map hauba config to engine config
+    provider_map = {
+        "anthropic": ProviderType.ANTHROPIC,
+        "openai": ProviderType.OPENAI,
+        "ollama": ProviderType.OLLAMA,
+        "deepseek": ProviderType.OPENAI,  # DeepSeek is OpenAI-compatible
+    }
+    provider = provider_map.get(
+        config.settings.llm.provider, ProviderType.ANTHROPIC
+    )
+
+    # DeepSeek needs a custom base URL
+    base_url = None
+    if config.settings.llm.provider == "deepseek":
+        base_url = "https://api.deepseek.com/v1"
+    elif config.settings.llm.provider == "ollama":
+        base_url = config.settings.llm.base_url or "http://localhost:11434/v1"
+
+    ws_path = Path(workspace_path).resolve() if workspace_path else Path.cwd() / "hauba-output"
+    ws_path.mkdir(parents=True, exist_ok=True)
+
+    engine_config = EngineConfig(
+        provider=provider,
+        api_key=config.settings.llm.api_key,
+        model=config.settings.llm.model,
+        base_url=base_url,
+        working_directory=str(ws_path),
+    )
+
+    engine = CopilotEngine(engine_config)
+
+    if not engine.is_available:
+        console.print(
+            "[yellow]Copilot CLI not found. Install with: npm install -g @github/copilot[/yellow]"
+        )
+        console.print("[dim]Falling back to legacy Director agent...[/dim]")
+        await _run_task_legacy(task, workspace_path)
+        return
+
+    # Show streaming events
+    def on_event(event):
+        if event.type == "assistant.message_delta":
+            data = event.data
+            if hasattr(data, "delta_content") and data.delta_content:
+                console.print(data.delta_content, end="")
+        elif event.type == "tool.execution_start":
+            console.print(f"\n[dim]  Tool: {event.data}[/dim]")
+
+    engine.on_event(on_event)
+
+    console.print(
+        Panel(
+            f"[bold cyan]Hauba AI Engineer[/bold cyan] (Copilot SDK Engine)\n"
+            f"  Provider: {config.settings.llm.provider} | Model: {config.settings.llm.model}\n"
+            f"  Workspace: {ws_path}",
+            border_style="cyan",
+        )
+    )
+
+    try:
+        result = await engine.execute(task, timeout=600.0)
+        console.print()  # newline after streaming
+        if result.success:
+            console.print(
+                Panel(
+                    f"[bold green]Task completed[/bold green]\n\n{result.output[:2000]}",
+                    border_style="green",
+                )
+            )
+        else:
+            console.print(
+                Panel(
+                    f"[bold red]Task failed[/bold red]\n\n{result.error}",
+                    border_style="red",
+                )
+            )
+        console.print(f"[dim]  Workspace: {ws_path}[/dim]")
+    finally:
+        await engine.stop()
+
+
+async def _run_task_legacy(task: str, workspace_path: str = "") -> None:
+    """Execute a task using the legacy Director agent (litellm-based)."""
     from hauba.agents.director import DirectorAgent
     from hauba.core.config import ConfigManager
     from hauba.core.events import EventEmitter
@@ -321,6 +422,142 @@ def serve(
     """Start the Hauba web dashboard."""
     _check_init()
     asyncio.run(_serve_web(host, port))
+
+
+@app.command()
+def api(
+    host: str = typer.Option("0.0.0.0", help="Host to bind to"),
+    port: int = typer.Option(8080, help="Port to serve on"),
+) -> None:
+    """Start the Hauba AI Engineer API server (BYOK)."""
+    asyncio.run(_serve_api(host, port))
+
+
+async def _serve_api(host: str, port: int) -> None:
+    """Start the AI Engineer API with Copilot SDK backend."""
+    try:
+        import uvicorn
+
+        from hauba.api.server import create_app
+    except ImportError as e:
+        console.print(f"[red]Missing dependencies: {e}[/red]")
+        console.print("[dim]Run: pip install hauba[web] github-copilot-sdk[/dim]")
+        return
+
+    app = create_app()
+    console.print(
+        Panel(
+            f"[bold cyan]Hauba AI Engineer API[/bold cyan]\n\n"
+            f"  Endpoint: http://{host}:{port}\n"
+            f"  Docs: http://{host}:{port}/docs\n\n"
+            f"  [green]BYOK: Users bring their own API key.[/green]\n"
+            f"  [dim]Hauba owner pays nothing for LLM usage.[/dim]",
+            border_style="cyan",
+        )
+    )
+    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
+@app.command(name="engine-run")
+def engine_run(
+    task: str = typer.Argument(..., help="Task description"),
+    provider: str = typer.Option("anthropic", "--provider", "-p", help="LLM provider"),
+    api_key: str = typer.Option("", "--api-key", "-k", help="API key (or use env var)"),
+    model: str = typer.Option("", "--model", "-m", help="Model to use"),
+    workspace: str = typer.Option("", "--workspace", "-w", help="Output directory"),
+) -> None:
+    """Run a task using the Copilot SDK engine (BYOK)."""
+    asyncio.run(_engine_run(task, provider, api_key, model, workspace))
+
+
+async def _engine_run(
+    task: str, provider: str, api_key: str, model: str, workspace: str
+) -> None:
+    """Execute a task using the Copilot Engine."""
+    from hauba.engine.copilot_engine import CopilotEngine
+    from hauba.engine.types import EngineConfig, ProviderType
+
+    # Resolve API key from arg or environment
+    if not api_key:
+        env_map = {
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "azure": "AZURE_OPENAI_KEY",
+        }
+        env_var = env_map.get(provider, "")
+        api_key = os.environ.get(env_var, "")
+        if not api_key and provider != "ollama":
+            console.print(
+                f"[red]No API key provided. Use --api-key or set {env_var}[/red]"
+            )
+            raise typer.Exit(1)
+
+    # Default models per provider
+    if not model:
+        model_map = {
+            "anthropic": "claude-sonnet-4-5-20250514",
+            "openai": "gpt-4o",
+            "azure": "gpt-4o",
+            "ollama": "qwen2.5-coder:32b",
+        }
+        model = model_map.get(provider, "claude-sonnet-4-5-20250514")
+
+    ws_path = Path(workspace).resolve() if workspace else Path.cwd() / "hauba-output"
+    ws_path.mkdir(parents=True, exist_ok=True)
+
+    config = EngineConfig(
+        provider=ProviderType(provider),
+        api_key=api_key,
+        model=model,
+        working_directory=str(ws_path),
+    )
+
+    engine = CopilotEngine(config)
+
+    # Show events in real-time
+    def on_event(event):
+        if event.type == "assistant.message_delta":
+            # Streaming text
+            data = event.data
+            if hasattr(data, "delta_content") and data.delta_content:
+                console.print(data.delta_content, end="")
+        elif event.type == "tool.execution_start":
+            console.print(f"\n[dim]Tool: {event.data}[/dim]")
+        elif event.type.startswith("engine."):
+            console.print(f"[dim]{event.type}[/dim]")
+
+    engine.on_event(on_event)
+
+    console.print(
+        Panel(
+            f"[bold cyan]Hauba Engine[/bold cyan] (Copilot SDK)\n"
+            f"  Provider: {provider} | Model: {model}\n"
+            f"  Workspace: {ws_path}",
+            border_style="cyan",
+        )
+    )
+
+    try:
+        result = await engine.execute(task, timeout=600.0)
+        console.print()  # newline after streaming
+        if result.success:
+            console.print(
+                Panel(
+                    f"[bold green]Task completed[/bold green]\n\n{result.output[:2000]}",
+                    border_style="green",
+                )
+            )
+        else:
+            console.print(
+                Panel(
+                    f"[bold red]Task failed[/bold red]\n\n{result.error}",
+                    border_style="red",
+                )
+            )
+    finally:
+        await engine.stop()
 
 
 async def _serve_web(host: str, port: int) -> None:
