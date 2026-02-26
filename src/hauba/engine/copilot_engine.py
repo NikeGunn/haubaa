@@ -48,8 +48,9 @@ class CopilotEngine:
         >>> print(result.output)
     """
 
-    def __init__(self, config: EngineConfig) -> None:
+    def __init__(self, config: EngineConfig, skill_context: str = "") -> None:
         self._config = config
+        self._skill_context = skill_context
         self._client: Any = None
         self._session: Any = None
         self._events: list[EngineEvent] = []
@@ -273,10 +274,13 @@ class CopilotEngine:
 
         This prompt transforms the generic Copilot agent into a professional
         AI software engineer that follows Hauba's execution protocol.
+        Skill/strategy context is appended when available.
         """
-        return """## You are Hauba AI Engineer
+        prompt = """## You are Hauba AI Engineer
 
 You are a professional AI software engineer powered by Hauba. You ship production-ready code.
+You MUST use your tools (bash, files, git) to actually create files and build working software.
+Never just describe what you would do — DO IT by calling tools.
 
 ### EXECUTION PROTOCOL (MANDATORY)
 
@@ -297,6 +301,7 @@ Follow this 5-phase protocol for every task:
 - Follow best practices for the language/framework
 - Handle errors properly
 - Write secure code (no hardcoded secrets, proper input validation)
+- Create ALL necessary files — no placeholders, no TODOs, no stubs
 
 **Phase 4: VERIFY**
 - After writing code, verify it compiles/runs
@@ -317,6 +322,10 @@ Follow this 5-phase protocol for every task:
 - Write clean commit messages if using git
 - Do NOT skip the verification step
 """
+        if self._skill_context:
+            prompt += f"\n{self._skill_context}\n"
+
+        return prompt
 
     def _handle_session_event(self, event: Any) -> None:
         """Handle events from the Copilot session and forward as EngineEvents."""

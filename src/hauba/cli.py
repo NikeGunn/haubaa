@@ -163,8 +163,63 @@ def run(
         asyncio.run(_run_task_engine(task, workspace))
 
 
+def _build_skill_strategy_context(task: str) -> str:
+    """Load Hauba skills and strategies, match them to the task, build context for injection."""
+    from hauba.core.constants import (
+        BUNDLED_SKILLS_DIR,
+        BUNDLED_STRATEGIES_DIR,
+        SKILLS_DIR,
+        STRATEGIES_DIR,
+    )
+    from hauba.skills.loader import SkillLoader
+    from hauba.skills.matcher import SkillMatcher
+    from hauba.skills.strategy import StrategyEngine
+
+    try:
+        skill_loader = SkillLoader(skill_dirs=[SKILLS_DIR, BUNDLED_SKILLS_DIR])
+        skill_matcher = SkillMatcher(skill_loader)
+        strategy_engine = StrategyEngine(strategy_dirs=[STRATEGIES_DIR, BUNDLED_STRATEGIES_DIR])
+    except Exception:
+        return ""
+
+    parts: list[str] = []
+
+    # Match skills
+    matches = skill_matcher.match(task, top_k=3)
+    if matches:
+        parts.append("## Skill Guidance (follow during execution)")
+        for match in matches:
+            skill = match.skill
+            parts.append(f"\n### {skill.name} (relevance: {match.score:.0%})")
+            if skill.approach:
+                parts.append("Approach:")
+                for step in skill.approach:
+                    parts.append(f"  - {step}")
+            if skill.constraints:
+                parts.append("Constraints (MUST follow):")
+                for c in skill.constraints:
+                    parts.append(f"  - {c}")
+
+    # Match strategy (only if above minimum threshold)
+    strategy = strategy_engine.match_domain(task)
+    if strategy:
+        parts.append(f"\n## Strategy: {strategy.name}")
+        if strategy.description:
+            parts.append(f"Description: {strategy.description}")
+        if strategy.milestones:
+            parts.append("Suggested milestones:")
+            for ms in strategy.milestones:
+                parts.append(f"  - {ms.get('description', '')}")
+
+    return "\n".join(parts)
+
+
 async def _run_task_engine(task: str, workspace_path: str = "") -> None:
-    """Execute a task using the Copilot SDK engine (new default)."""
+    """Execute a task using the Copilot SDK engine (primary default).
+
+    The Copilot SDK handles the actual building — planning, tool invocation,
+    file creation, git, testing. Hauba adds skills/strategies as domain guidance.
+    """
     from hauba.core.config import ConfigManager
     from hauba.engine.copilot_engine import CopilotEngine
     from hauba.engine.types import EngineConfig, ProviderType
@@ -198,32 +253,67 @@ async def _run_task_engine(task: str, workspace_path: str = "") -> None:
         working_directory=str(ws_path),
     )
 
-    engine = CopilotEngine(engine_config)
+    # Build skill/strategy context from Hauba's domain knowledge
+    skill_context = _build_skill_strategy_context(task)
+
+    engine = CopilotEngine(engine_config, skill_context=skill_context)
 
     if not engine.is_available:
         console.print(
-            "[yellow]Copilot SDK not found. Install with: pip install github-copilot-sdk[/yellow]"
+            Panel(
+                "[bold red]Copilot SDK not installed[/bold red]\n\n"
+                "Hauba requires the Copilot SDK to build software.\n\n"
+                "  Install: [bold]pip install github-copilot-sdk[/bold]\n\n"
+                "[dim]Use --legacy flag to use the legacy litellm agent instead.[/dim]",
+                title="Missing Dependency",
+                border_style="red",
+            )
         )
-        console.print("[dim]Falling back to legacy Director agent...[/dim]")
-        await _run_task_legacy(task, workspace_path)
-        return
+        raise typer.Exit(1)
 
-    # Show streaming events
+    # Show streaming events with rich formatting
     def on_event(event):
-        if event.type == "assistant.message_delta":
-            data = event.data
-            if hasattr(data, "delta_content") and data.delta_content:
+        etype = event.type
+        data = event.data
+
+        if etype == "assistant.message_delta":
+            if isinstance(data, dict) and data.get("delta_content"):
+                console.print(data["delta_content"], end="")
+            elif hasattr(data, "delta_content") and data.delta_content:
                 console.print(data.delta_content, end="")
-        elif event.type == "tool.execution_start":
-            console.print(f"\n[dim]  Tool: {event.data}[/dim]")
+        elif etype == "tool.execution_start":
+            tool_name = ""
+            tool_input = ""
+            if isinstance(data, dict):
+                tool_name = data.get("name", str(data))
+                tool_input = str(data.get("input", ""))[:120]
+            else:
+                tool_name = str(data) if data else ""
+            if tool_name:
+                console.print(
+                    f"\n  [bold yellow]> {tool_name}[/bold yellow] [dim]{tool_input}[/dim]"
+                )
+        elif etype == "tool.execution_complete":
+            if isinstance(data, dict) and data.get("output"):
+                output = str(data["output"])[:200]
+                for line in output.split("\n")[:3]:
+                    if line.strip():
+                        console.print(f"  [dim]  {line}[/dim]")
 
     engine.on_event(on_event)
 
+    skill_info = ""
+    if skill_context:
+        skill_lines = [ln for ln in skill_context.split("\n") if ln.startswith("### ")]
+        if skill_lines:
+            names = [ln.replace("### ", "").split(" (")[0] for ln in skill_lines[:3]]
+            skill_info = f"\n  Skills: {', '.join(names)}"
+
     console.print(
         Panel(
-            f"[bold cyan]Hauba AI Engineer[/bold cyan] (Copilot SDK Engine)\n"
+            f"[bold cyan]Hauba AI Engineer[/bold cyan] (Copilot SDK)\n"
             f"  Provider: {config.settings.llm.provider} | Model: {config.settings.llm.model}\n"
-            f"  Workspace: {ws_path}",
+            f"  Workspace: {ws_path}{skill_info}",
             border_style="cyan",
         )
     )
@@ -471,7 +561,7 @@ def engine_run(
 
 
 async def _engine_run(task: str, provider: str, api_key: str, model: str, workspace: str) -> None:
-    """Execute a task using the Copilot Engine."""
+    """Execute a task using the Copilot Engine with skill/strategy injection."""
     from hauba.engine.copilot_engine import CopilotEngine
     from hauba.engine.types import EngineConfig, ProviderType
 
@@ -508,7 +598,10 @@ async def _engine_run(task: str, provider: str, api_key: str, model: str, worksp
         working_directory=str(ws_path),
     )
 
-    engine = CopilotEngine(config)
+    # Load Hauba skill/strategy context
+    skill_context = _build_skill_strategy_context(task)
+
+    engine = CopilotEngine(config, skill_context=skill_context)
 
     # Show events in real-time
     def on_event(event):

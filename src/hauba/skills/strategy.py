@@ -18,6 +18,11 @@ from hauba.ledger.tracker import TaskLedger
 
 logger = structlog.get_logger()
 
+# Minimum score required for a strategy to match a task.
+# Domain keyword match = 5, name-word match = 2, description-word match = 1.
+# A threshold of 5 prevents weak false-positive matches (e.g., score=2).
+MINIMUM_STRATEGY_MATCH_SCORE = 5
+
 # Use yaml if available, otherwise fall back to basic parsing
 try:
     import yaml
@@ -169,9 +174,20 @@ class StrategyEngine:
                 best_score = score
                 best_match = strategy
 
-        if best_match:
+        # Enforce minimum score threshold to prevent false-positive matches
+        if best_match and best_score >= MINIMUM_STRATEGY_MATCH_SCORE:
             logger.info("strategy.matched", name=best_match.name, score=best_score)
-        return best_match
+            return best_match
+
+        if best_match and best_score > 0:
+            logger.info(
+                "strategy.below_threshold",
+                name=best_match.name,
+                score=best_score,
+                threshold=MINIMUM_STRATEGY_MATCH_SCORE,
+            )
+
+        return None
 
     def list_strategies(self) -> list[str]:
         if not self._loaded:
