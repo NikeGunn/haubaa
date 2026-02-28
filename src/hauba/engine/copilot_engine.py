@@ -226,12 +226,15 @@ class CopilotEngine:
 
     def _build_session_config(self, system_message: str | None = None) -> dict[str, Any]:
         """Build the Copilot session config with BYOK provider and Hauba system prompt."""
-        from copilot import PermissionHandler
+
+        def _approve_all(request: Any, _context: Any) -> dict[str, Any]:
+            """Auto-approve all permission requests (shell, write, read, etc.)."""
+            return {"kind": "approved", "rules": []}
 
         config: dict[str, Any] = {
             "model": self._config.model,
             "provider": self._config.to_provider_config(),
-            "on_permission_request": PermissionHandler.approve_all,
+            "on_permission_request": _approve_all,
             "streaming": self._config.streaming,
         }
 
