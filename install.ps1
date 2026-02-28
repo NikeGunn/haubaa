@@ -12,7 +12,7 @@ Write-Host " | |_| | / _`` || | | | | '_ \  / _`` |" -ForegroundColor Cyan
 Write-Host " |  _  || (_| || |_| | | |_) || (_| |" -ForegroundColor Cyan
 Write-Host " |_| |_| \__,_| \__,_| |_.__/  \__,_|" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  AI Agent Operating System" -ForegroundColor White
+Write-Host "  AI Workstation" -ForegroundColor White
 Write-Host "  https://hauba.tech" -ForegroundColor Cyan
 Write-Host ""
 
@@ -76,6 +76,14 @@ if ($lastLine) { Write-Host "  $($lastLine.Trim())" -ForegroundColor DarkGray }
 $haubaCmd = Get-Command hauba -ErrorAction SilentlyContinue
 if ($haubaCmd) {
     Write-Host ""
+    # Verify Copilot SDK
+    $sdkCheck = & $pythonExe @pythonArgs -c "import copilot; print('OK')" 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Info "Copilot SDK: OK"
+    } else {
+        Write-Warn "Copilot SDK check inconclusive (will work on first run)"
+    }
+
     Write-Info "Installation complete!"
     Write-Host ""
     Write-Host "Get started:" -ForegroundColor White

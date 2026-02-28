@@ -33,7 +33,6 @@ agents:
       - code-generation
     depends_on: [backend]
 
-strategy: "saas-building"
 output: "./out"
 """
 
@@ -101,7 +100,6 @@ class TestParseComposeFile:
         assert config.settings.max_parallel_agents == 2
         assert config.settings.deliberation_min_seconds == 10
         assert config.settings.sandbox == "none"
-        assert config.strategy == "saas-building"
         assert config.output == "./out"
 
         assert "backend" in config.agents

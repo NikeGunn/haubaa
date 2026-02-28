@@ -1,4 +1,4 @@
-"""Tests for compose runner."""
+"""Tests for compose runner (CopilotEngine-based)."""
 
 from __future__ import annotations
 
@@ -52,17 +52,6 @@ def simple_compose():
     )
 
 
-@pytest.fixture
-def compose_with_strategy():
-    return ComposeConfig(
-        team="strategy-team",
-        strategy="saas-building",
-        agents={
-            "backend": ComposeAgentConfig(role="Backend"),
-        },
-    )
-
-
 class TestComposeRunner:
     def test_init(self, mock_config, events, simple_compose):
         runner = ComposeRunner(config=mock_config, events=events, compose=simple_compose)
@@ -80,57 +69,24 @@ class TestComposeRunner:
         assert runner.get_agent_skills("worker-b") == ["testing-and-quality"]
         assert runner.get_agent_skills("nonexistent") == []
 
-    def test_build_milestones_from_agents(self, mock_config, events, simple_compose):
+    def test_topological_sort(self, mock_config, events, simple_compose):
         runner = ComposeRunner(config=mock_config, events=events, compose=simple_compose)
-        milestones = runner._build_milestones("build something")
+        order = runner._topological_sort()
+        # worker-a should come before worker-b (worker-b depends on worker-a)
+        assert order.index("worker-a") < order.index("worker-b")
 
-        assert len(milestones) == 2
-        names = {m.id for m in milestones}
-        assert names == {"worker-a", "worker-b"}
-
-        # Check dependencies mapped correctly
-        worker_b = next(m for m in milestones if m.id == "worker-b")
-        assert worker_b.dependencies == ["worker-a"]
-
-        worker_a = next(m for m in milestones if m.id == "worker-a")
-        assert worker_a.dependencies == []
-
-    def test_build_milestones_with_strategy(
-        self, mock_config, events, compose_with_strategy, tmp_path
-    ):
-        """When a strategy is found, its milestones should be used."""
-        strategy_dir = tmp_path / "strategies"
-        strategy_dir.mkdir()
-        strategy_yaml = strategy_dir / "saas-building.yaml"
-        strategy_yaml.write_text(
-            """
-name: saas-building
-description: "SaaS strategy"
-domain: saas
-milestones:
-  - id: m1
-    description: "First milestone"
-    tasks:
-      - "Task 1"
-    dependencies: []
-  - id: m2
-    description: "Second milestone"
-    tasks:
-      - "Task 2"
-    dependencies: [m1]
-""",
-            encoding="utf-8",
+    def test_topological_sort_no_deps(self, mock_config, events):
+        compose = ComposeConfig(
+            team="no-deps",
+            agents={
+                "a": ComposeAgentConfig(role="A"),
+                "b": ComposeAgentConfig(role="B"),
+                "c": ComposeAgentConfig(role="C"),
+            },
         )
-
-        runner = ComposeRunner(config=mock_config, events=events, compose=compose_with_strategy)
-        runner._strategy_engine._strategy_dirs = [strategy_dir]
-        runner._strategy_engine._loaded = False
-
-        milestones = runner._build_milestones("build saas")
-        assert len(milestones) == 2
-        assert milestones[0].id == "m1"
-        assert milestones[1].id == "m2"
-        assert milestones[1].dependencies == ["m1"]
+        runner = ComposeRunner(config=mock_config, events=events, compose=compose)
+        order = runner._topological_sort()
+        assert len(order) == 3
 
     def test_output_dir(self, mock_config, events):
         compose = ComposeConfig(
@@ -140,3 +96,9 @@ milestones:
         )
         runner = ComposeRunner(config=mock_config, events=events, compose=compose)
         assert runner._output_dir == Path("/custom/output").resolve()
+
+    def test_build_agent_skill_context(self, mock_config, events, simple_compose):
+        runner = ComposeRunner(config=mock_config, events=events, compose=simple_compose)
+        # Should not raise even with skills that aren't loaded
+        context = runner._build_agent_skill_context(["code-generation", "nonexistent"])
+        assert isinstance(context, str)

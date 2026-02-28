@@ -36,7 +36,7 @@ class Doctor:
         results.append(self._check_sqlite())
         results.append(self._check_disk_space())
         results.append(self._check_playwright())
-        results.append(self._check_litellm())
+        results.append(self._check_copilot_sdk())
         return results
 
     def _check_python_version(self) -> CheckResult:
@@ -172,22 +172,20 @@ class Doctor:
                 suggestion="Run: pip install hauba[computer-use] && playwright install chromium",
             )
 
-    def _check_litellm(self) -> CheckResult:
+    def _check_copilot_sdk(self) -> CheckResult:
         try:
-            import litellm
+            import copilot
 
-            version = getattr(litellm, "__version__", None) or getattr(
-                litellm, "version", "unknown"
-            )
+            version = getattr(copilot, "__version__", "installed")
             return CheckResult(
-                name="LiteLLM",
+                name="Copilot SDK",
                 passed=True,
                 message=f"Version {version}",
             )
         except ImportError:
             return CheckResult(
-                name="LiteLLM",
+                name="Copilot SDK",
                 passed=False,
                 message="Not installed",
-                suggestion="Run: pip install hauba",
+                suggestion="Run: pip install github-copilot-sdk",
             )

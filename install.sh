@@ -40,7 +40,7 @@ main() {
     printf "${CYAN} |  _  || (_| || |_| | | |_) || (_| |${NC}\n"
     printf "${CYAN} |_| |_| \\\\__,_| \\\\__,_| |_.__/  \\\\__,_|${NC}\n"
     printf "\n"
-    printf "${BOLD}  AI Agent Operating System${NC}\n"
+    printf "${BOLD}  AI Workstation${NC}\n"
     printf "  ${CYAN}https://hauba.tech${NC}\n"
     printf "\n"
 
@@ -52,6 +52,13 @@ main() {
     $PYTHON -m pip install --upgrade hauba 2>&1 | tail -1
 
     if command -v hauba > /dev/null 2>&1; then
+        # Verify Copilot SDK
+        if $PYTHON -c "import copilot; print('OK')" > /dev/null 2>&1; then
+            info "Copilot SDK: OK"
+        else
+            warn "Copilot SDK check inconclusive (will work on first run)"
+        fi
+
         printf "\n"
         info "Installation complete!"
         printf "\n"

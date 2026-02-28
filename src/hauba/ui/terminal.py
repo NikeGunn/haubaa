@@ -9,9 +9,8 @@ from rich.console import Console
 from rich.panel import Panel
 
 from hauba.core.constants import (
-    EVENT_AGENT_EXECUTING,
-    EVENT_AGENT_REVIEWING,
-    EVENT_AGENT_THINKING,
+    EVENT_ENGINE_EXECUTING,
+    EVENT_ENGINE_STARTED,
     EVENT_TASK_COMPLETED,
     EVENT_TASK_FAILED,
     EVENT_TOOL_CALLED,
@@ -49,9 +48,8 @@ class TerminalUI:
 
     def _setup_handlers(self) -> None:
         """Subscribe to events for live display."""
-        self._events.on(EVENT_AGENT_THINKING, self._on_thinking)
-        self._events.on(EVENT_AGENT_EXECUTING, self._on_executing)
-        self._events.on(EVENT_AGENT_REVIEWING, self._on_reviewing)
+        self._events.on(EVENT_ENGINE_STARTED, self._on_thinking)
+        self._events.on(EVENT_ENGINE_EXECUTING, self._on_executing)
         self._events.on(EVENT_TOOL_CALLED, self._on_tool_called)
         self._events.on(EVENT_TOOL_RESULT, self._on_tool_result)
         self._events.on(EVENT_TASK_COMPLETED, self._on_completed)
@@ -107,9 +105,6 @@ class TerminalUI:
     async def _on_executing(self, event: Event) -> None:
         steps = event.data.get("steps", 0)
         self._console.print(f"[cyan]  {_SYM_PLAY} Executing ({steps} steps planned)[/cyan]")
-
-    async def _on_reviewing(self, event: Event) -> None:
-        self._console.print(f"[dim]  {_SYM_REVIEW} Reviewing results...[/dim]")
 
     async def _on_tool_called(self, event: Event) -> None:
         tool = event.data.get("tool", "?")

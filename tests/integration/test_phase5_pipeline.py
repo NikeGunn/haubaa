@@ -1,4 +1,4 @@
-"""Integration tests for Phase 5 — Compose + Skills pipeline."""
+"""Integration tests for Phase 5 — Skills + Compose pipeline (V3: no strategies)."""
 
 from __future__ import annotations
 
@@ -8,12 +8,11 @@ import pytest
 
 from hauba.compose.parser import parse_compose_file
 from hauba.compose.runner import ComposeRunner
-from hauba.core.constants import BUNDLED_SKILLS_DIR, BUNDLED_STRATEGIES_DIR
+from hauba.core.constants import BUNDLED_SKILLS_DIR
 from hauba.core.events import EventEmitter
 from hauba.core.types import ComposeConfig
 from hauba.skills.loader import SkillLoader
 from hauba.skills.matcher import SkillMatcher
-from hauba.skills.strategy import StrategyEngine
 
 
 class TestSkillLoading:
@@ -22,9 +21,9 @@ class TestSkillLoading:
     def test_load_bundled_skills(self):
         loader = SkillLoader(skill_dirs=[BUNDLED_SKILLS_DIR])
         skills = loader.load_all()
-        assert len(skills) >= 10, f"Expected at least 10 bundled skills, got {len(skills)}"
+        assert len(skills) >= 17, f"Expected at least 17 bundled skills, got {len(skills)}"
 
-    def test_all_skill_names(self):
+    def test_all_original_skill_names(self):
         loader = SkillLoader(skill_dirs=[BUNDLED_SKILLS_DIR])
         skills = loader.load_all()
         expected = {
@@ -43,12 +42,60 @@ class TestSkillLoading:
             f"Missing skills: {expected - set(skills.keys())}"
         )
 
+    def test_new_workstation_skill_names(self):
+        loader = SkillLoader(skill_dirs=[BUNDLED_SKILLS_DIR])
+        skills = loader.load_all()
+        expected = {
+            "video-editing",
+            "image-generation",
+            "data-processing",
+            "web-scraping",
+            "automation-and-scripting",
+            "document-generation",
+            "machine-learning",
+        }
+        assert expected.issubset(set(skills.keys())), (
+            f"Missing new skills: {expected - set(skills.keys())}"
+        )
+
     def test_skills_have_capabilities(self):
         loader = SkillLoader(skill_dirs=[BUNDLED_SKILLS_DIR])
         skills = loader.load_all()
         for name, skill in skills.items():
             assert skill.capabilities, f"Skill '{name}' has no capabilities"
             assert skill.when_to_use, f"Skill '{name}' has no when_to_use"
+
+    def test_new_skills_have_tools_required(self):
+        loader = SkillLoader(skill_dirs=[BUNDLED_SKILLS_DIR])
+        skills = loader.load_all()
+        skills_with_tools = [
+            "video-editing",
+            "image-generation",
+            "data-processing",
+            "web-scraping",
+            "document-generation",
+            "machine-learning",
+        ]
+        for name in skills_with_tools:
+            skill = skills.get(name)
+            assert skill is not None, f"Skill '{name}' not found"
+            assert skill.tools_required, f"Skill '{name}' has no tools_required"
+
+    def test_skills_with_playbooks(self):
+        loader = SkillLoader(skill_dirs=[BUNDLED_SKILLS_DIR])
+        skills = loader.load_all()
+        skills_with_playbooks = [
+            "full-stack-engineering",
+            "debugging-and-repair",
+            "data-engineering",
+            "api-design-and-integration",
+            "refactoring-and-migration",
+            "research-and-analysis",
+        ]
+        for name in skills_with_playbooks:
+            skill = skills.get(name)
+            assert skill is not None, f"Skill '{name}' not found"
+            assert skill.playbook, f"Skill '{name}' has no playbook"
 
     def test_skill_matching(self):
         loader = SkillLoader(skill_dirs=[BUNDLED_SKILLS_DIR])
@@ -70,56 +117,25 @@ class TestSkillLoading:
         skill_names = {m.skill.name for m in matches}
         assert "debugging-and-repair" in skill_names
 
+    def test_skill_matching_video(self):
+        loader = SkillLoader(skill_dirs=[BUNDLED_SKILLS_DIR])
+        matcher = SkillMatcher(loader)
 
-class TestStrategyLoading:
-    """Test that bundled strategies load correctly."""
+        matches = matcher.match("edit this video and add subtitles")
+        assert len(matches) > 0
+        skill_names = {m.skill.name for m in matches}
+        assert "video-editing" in skill_names
 
-    def test_load_bundled_strategies(self):
-        engine = StrategyEngine(strategy_dirs=[BUNDLED_STRATEGIES_DIR])
-        strategies = engine.load_all()
-        assert len(strategies) >= 6, f"Expected at least 6 strategies, got {len(strategies)}"
+    def test_skill_matching_data(self):
+        loader = SkillLoader(skill_dirs=[BUNDLED_SKILLS_DIR])
+        matcher = SkillMatcher(loader)
 
-    def test_all_strategy_names(self):
-        engine = StrategyEngine(strategy_dirs=[BUNDLED_STRATEGIES_DIR])
-        strategies = engine.load_all()
-        expected = {
-            "saas-building",
-            "data-pipeline",
-            "bug-fixing",
-            "api-development",
-            "code-review-and-refactor",
-            "research-and-prototype",
-        }
-        assert expected.issubset(set(strategies.keys())), (
-            f"Missing strategies: {expected - set(strategies.keys())}"
-        )
-
-    def test_strategies_have_milestones(self):
-        engine = StrategyEngine(strategy_dirs=[BUNDLED_STRATEGIES_DIR])
-        strategies = engine.load_all()
-        for name, strategy in strategies.items():
-            assert strategy.milestones, f"Strategy '{name}' has no milestones"
-            assert strategy.agents, f"Strategy '{name}' has no agents"
-
-    def test_strategy_to_milestones(self):
-        engine = StrategyEngine(strategy_dirs=[BUNDLED_STRATEGIES_DIR])
-        strategy = engine.get("saas-building")
-        assert strategy is not None
-
-        milestones = strategy.to_milestone_objects()
-        assert len(milestones) >= 4
-        # First milestone should have no dependencies
-        assert milestones[0].dependencies == []
-
-    def test_strategy_domain_matching(self):
-        engine = StrategyEngine(strategy_dirs=[BUNDLED_STRATEGIES_DIR])
-        strategy = engine.match_domain("build a saas application with billing")
-        assert strategy is not None
-        assert strategy.name == "saas-building"
+        matches = matcher.match("analyze this CSV data and create a chart")
+        assert len(matches) > 0
 
 
 class TestComposeWithBundled:
-    """Test compose pipeline with bundled skills and strategies."""
+    """Test compose pipeline with bundled skills."""
 
     def test_parse_example_compose(self):
         example = Path(__file__).resolve().parent.parent.parent / "hauba.yaml.example"

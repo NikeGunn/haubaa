@@ -15,12 +15,8 @@ class GateCheckError(LedgerError):
     """A verification gate did not pass."""
 
 
-class AgentError(HaubaError):
-    """Agent lifecycle error."""
-
-
-class DeliberationError(AgentError):
-    """Agent failed during deliberation phase."""
+class EngineError(HaubaError):
+    """CopilotEngine execution error."""
 
 
 class SkillNotFoundError(HaubaError):
@@ -57,7 +53,3 @@ class ComposeError(HaubaError):
 
 class SkillInstallError(HaubaError):
     """Skill installation failed."""
-
-
-class StrategyNotFoundError(HaubaError):
-    """Requested strategy does not exist."""

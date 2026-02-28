@@ -31,7 +31,7 @@ def test_build_system_prompt_without_skill_context() -> None:
     config = EngineConfig(provider=ProviderType.ANTHROPIC, api_key="test")
     engine = CopilotEngine(config, skill_context="")
     prompt = engine._build_hauba_system_prompt()
-    assert "Hauba AI Engineer" in prompt
+    assert "Hauba AI Workstation" in prompt
     assert "## Test Skill" not in prompt
 
 

@@ -62,3 +62,41 @@
 - Authentication failures: verify token signing key rotation
 - Rate limit exceeded: implement client-side backoff, request quota increase
 - Integration timeout: add circuit breaker, implement fallback behavior
+
+## Playbook: API Development
+
+### Milestone 1: Spec Design
+- Identify resources, operations, and relationships
+- Design URL structure following REST conventions
+- Write OpenAPI specification with request/response schemas
+- Define authentication and authorization requirements
+
+### Milestone 2: Models
+- Implement database models from the spec
+- Create migration scripts
+- Add model validation and serialization
+- Set up database connection with pooling
+
+### Milestone 3: Endpoints
+- Implement CRUD handlers for each resource
+- Add input validation and error handling
+- Implement pagination, filtering, and sorting
+- Add request/response logging middleware
+
+### Milestone 4: Auth
+- Implement authentication middleware (JWT or session)
+- Add role-based access control per endpoint
+- Implement rate limiting
+- Add CORS configuration
+
+### Milestone 5: Testing
+- Write unit tests for business logic
+- Write integration tests for each endpoint
+- Test authentication and authorization edge cases
+- Test error responses and validation messages
+
+### Milestone 6: Documentation
+- Generate API documentation from OpenAPI spec
+- Add usage examples for each endpoint
+- Write deployment and configuration guide
+- Set up monitoring and health check endpoints

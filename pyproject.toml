@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hauba"
-version = "0.2.1"
-description = "AI Software Engineer as a Service — Powered by Copilot SDK"
+version = "0.3.0"
+description = "AI Workstation — Build Software, Edit Video, Process Data, and More"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
     { name = "Hauba AI" },
 ]
-keywords = ["ai", "agent", "llm", "automation", "multi-agent", "orchestration"]
+keywords = ["ai", "agent", "llm", "automation", "workstation", "copilot-sdk"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -28,7 +28,7 @@ classifiers = [
 dependencies = [
     "typer>=0.12,<1.0",
     "rich>=13.0,<14.0",
-    "litellm>=1.40,<2.0",
+    "github-copilot-sdk>=0.1.0",
     "aiosqlite>=0.20,<1.0",
     "httpx>=0.27,<1.0",
     "pydantic>=2.5,<3.0",
@@ -57,15 +57,11 @@ channels = [
     "python-telegram-bot>=21.0,<22.0",
     "discord.py>=2.3,<3.0",
 ]
-engine = [
-    "github-copilot-sdk>=0.1.0",
-]
 all = [
     "hauba[computer-use]",
     "hauba[voice]",
     "hauba[web]",
     "hauba[channels]",
-    "hauba[engine]",
 ]
 dev = [
     "pytest>=8.0,<9.0",
@@ -101,7 +97,6 @@ include = [
 [tool.hatch.build]
 artifacts = [
     "src/hauba/bundled_skills/*.md",
-    "src/hauba/bundled_strategies/*.yaml",
     "src/hauba/py.typed",
 ]
 

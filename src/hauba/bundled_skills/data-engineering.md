@@ -59,3 +59,41 @@
 - Schema mismatch: validate schema before processing, fail fast
 - Data corruption: maintain raw data archive, rebuild from source
 - Slow queries: analyze execution plan, add indexes, consider materialized views
+
+## Playbook: Data Pipeline
+
+### Milestone 1: Schema Design
+- Catalog source data formats, volumes, and update frequencies
+- Design target schema with normalization trade-offs documented
+- Define data quality rules and validation constraints
+- Plan schema evolution strategy
+
+### Milestone 2: Ingestion
+- Build source connectors with retry logic and error handling
+- Implement incremental extraction (CDC, watermarks, or timestamps)
+- Add schema validation at ingestion boundary
+- Log ingestion metrics (records, bytes, duration)
+
+### Milestone 3: Transform
+- Implement transformation functions with clear input/output contracts
+- Add data cleansing (dedup, null handling, type coercion)
+- Apply business rules and derived calculations
+- Write unit tests for each transformation
+
+### Milestone 4: Storage
+- Implement target writer with transaction support
+- Add partition strategy for query performance
+- Create indexes for common query patterns
+- Implement idempotent writes for safe re-runs
+
+### Milestone 5: Validation
+- Implement row count reconciliation between source and target
+- Add checksum validation for critical fields
+- Build data quality dashboard with pass/fail metrics
+- Set up alerting for quality threshold violations
+
+### Milestone 6: Monitoring
+- Add pipeline execution logging and metrics
+- Configure alerting for failures and SLA breaches
+- Write operational runbook with troubleshooting steps
+- Test failure recovery and checkpoint resume

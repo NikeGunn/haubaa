@@ -1,4 +1,4 @@
-"""Compose Runner — Execute agent teams from ComposeConfig."""
+"""Compose Runner — Execute agent teams from ComposeConfig using CopilotEngine."""
 
 from __future__ import annotations
 
@@ -9,30 +9,28 @@ import structlog
 from hauba.core.config import ConfigManager
 from hauba.core.constants import (
     BUNDLED_SKILLS_DIR,
-    BUNDLED_STRATEGIES_DIR,
+    EVENT_COMPOSE_AGENT_COMPLETED,
+    EVENT_COMPOSE_AGENT_FAILED,
+    EVENT_COMPOSE_AGENT_STARTED,
     EVENT_COMPOSE_COMPLETED,
     EVENT_COMPOSE_FAILED,
     EVENT_COMPOSE_STARTED,
     SKILLS_DIR,
-    STRATEGIES_DIR,
 )
-from hauba.core.dag import DAGExecutor
 from hauba.core.events import EventEmitter
-from hauba.core.types import ComposeConfig, Milestone, Result, TaskStep
+from hauba.core.types import ComposeConfig, Result
 from hauba.skills.loader import SkillLoader
-from hauba.skills.strategy import StrategyEngine
 
 logger = structlog.get_logger()
 
 
 class ComposeRunner:
-    """Executes a compose configuration — creates agent teams, wires DAGs, runs tasks.
+    """Executes a compose configuration using CopilotEngine.
 
     Workflow:
-    1. Load skills and strategies
-    2. Build milestones from agent dependencies (or strategy milestones)
-    3. Wire up DAGExecutor
-    4. Execute the task through the agent team
+    1. Load skills for each agent
+    2. Topologically sort agents by dependencies
+    3. Execute each agent's task sequentially through CopilotEngine
     """
 
     def __init__(
@@ -48,18 +46,12 @@ class ComposeRunner:
         self._skill_loader = SkillLoader(
             skill_dirs=[SKILLS_DIR, BUNDLED_SKILLS_DIR],
         )
-        self._strategy_engine = StrategyEngine(
-            strategy_dirs=[STRATEGIES_DIR, BUNDLED_STRATEGIES_DIR],
-        )
 
     async def run(self, task: str) -> Result:
-        """Execute a task using the compose team.
+        """Execute a task using the compose team via CopilotEngine.
 
-        Args:
-            task: The task description.
-
-        Returns:
-            Result with success/failure and summary.
+        Each agent in the compose file runs as a separate CopilotEngine.execute() call,
+        sequenced by dependencies (topological sort).
         """
         await self._events.emit(
             EVENT_COMPOSE_STARTED,
@@ -67,31 +59,91 @@ class ComposeRunner:
         )
 
         try:
+            from hauba.engine.copilot_engine import CopilotEngine
+            from hauba.engine.types import EngineConfig, ProviderType
+
             # Load skills
             self._skill_loader.load_all()
 
-            # Build milestones
-            milestones = self._build_milestones(task)
+            # Build engine config from hauba settings
+            provider_map = {
+                "anthropic": ProviderType.ANTHROPIC,
+                "openai": ProviderType.OPENAI,
+                "ollama": ProviderType.OLLAMA,
+                "deepseek": ProviderType.OPENAI,
+            }
+            provider = provider_map.get(self._config.settings.llm.provider, ProviderType.ANTHROPIC)
 
-            # Create and execute DAG
-            dag = DAGExecutor(
-                config=self._config,
-                events=self._events,
-            )
-            dag.add_milestones(milestones)
+            base_url = None
+            if self._config.settings.llm.provider == "deepseek":
+                base_url = "https://api.deepseek.com/v1"
+            elif self._config.settings.llm.provider == "ollama":
+                base_url = self._config.settings.llm.base_url or "http://localhost:11434/v1"
 
-            if not dag.validate_dag():
-                return Result.fail("DAG has circular dependencies")
+            # Topologically sort agents
+            sorted_agents = self._topological_sort()
 
-            result = await dag.execute()
+            # Execute each agent sequentially
+            results: list[str] = []
+            for agent_name in sorted_agents:
+                agent_cfg = self._compose.agents[agent_name]
 
-            topic = EVENT_COMPOSE_COMPLETED if result.success else EVENT_COMPOSE_FAILED
+                await self._events.emit(
+                    EVENT_COMPOSE_AGENT_STARTED,
+                    {"agent": agent_name, "role": agent_cfg.role},
+                )
+
+                # Build skill context for this agent
+                skill_context = self._build_agent_skill_context(agent_cfg.skills)
+
+                # Create workspace for this agent
+                agent_workspace = self._output_dir / agent_name
+                agent_workspace.mkdir(parents=True, exist_ok=True)
+
+                engine_config = EngineConfig(
+                    provider=provider,
+                    api_key=self._config.settings.llm.api_key,
+                    model=agent_cfg.model or self._config.settings.llm.model,
+                    base_url=base_url,
+                    working_directory=str(agent_workspace),
+                )
+
+                engine = CopilotEngine(engine_config, skill_context=skill_context)
+
+                # Build agent-specific instruction
+                instruction = (
+                    f"You are the {agent_cfg.role} agent. "
+                    f"{agent_cfg.description or ''}\n\n"
+                    f"Task: {task}\n\n"
+                    f"Previous agent results:\n{chr(10).join(results[-3:]) if results else 'None (you are first)'}"
+                )
+
+                try:
+                    result = await engine.execute(instruction, timeout=600.0)
+                    if result.success:
+                        results.append(f"[{agent_name}/{agent_cfg.role}]: {result.output[:500]}")
+                        await self._events.emit(
+                            EVENT_COMPOSE_AGENT_COMPLETED,
+                            {"agent": agent_name, "output_length": len(result.output)},
+                        )
+                    else:
+                        await self._events.emit(
+                            EVENT_COMPOSE_AGENT_FAILED,
+                            {"agent": agent_name, "error": result.error},
+                        )
+                        return Result.fail(f"Agent {agent_name} failed: {result.error}")
+                finally:
+                    await engine.stop()
+
             await self._events.emit(
-                topic,
-                {"team": self._compose.team, "result": result.value or result.error},
+                EVENT_COMPOSE_COMPLETED,
+                {"team": self._compose.team, "agents_completed": len(sorted_agents)},
             )
 
-            return result
+            summary = (
+                f"Compose team '{self._compose.team}' completed with {len(sorted_agents)} agents."
+            )
+            return Result.ok(summary)
 
         except Exception as exc:
             logger.exception("compose.run_failed", team=self._compose.team)
@@ -101,65 +153,45 @@ class ComposeRunner:
             )
             return Result.fail(str(exc))
 
-    def _build_milestones(self, task: str) -> list[Milestone]:
-        """Build milestones from strategy or agent dependencies."""
-        # Try to use strategy milestones if specified
-        if self._compose.strategy:
-            strategy = self._strategy_engine.get(self._compose.strategy)
-            if strategy:
-                milestones = strategy.to_milestone_objects()
-                if milestones:
-                    logger.info(
-                        "compose.using_strategy",
-                        strategy=strategy.name,
-                        milestones=len(milestones),
-                    )
-                    return milestones
+    def _topological_sort(self) -> list[str]:
+        """Sort agents by dependencies (topological order)."""
+        visited: set[str] = set()
+        order: list[str] = []
 
-        # Fall back to building milestones from agent config
-        return self._milestones_from_agents(task)
+        def visit(name: str) -> None:
+            if name in visited:
+                return
+            visited.add(name)
+            agent = self._compose.agents.get(name)
+            if agent:
+                for dep in agent.depends_on:
+                    visit(dep)
+            order.append(name)
 
-    def _milestones_from_agents(self, task: str) -> list[Milestone]:
-        """Create milestones from compose agent definitions.
+        for name in self._compose.agents:
+            visit(name)
 
-        Each agent becomes a milestone. Dependencies map directly.
-        """
-        milestones: list[Milestone] = []
+        return order
 
-        for name, agent_cfg in self._compose.agents.items():
-            # Compose skill context for this agent
-            skill_names = agent_cfg.skills
-            for sname in skill_names:
-                try:
-                    self._skill_loader.get(sname)
-                except Exception:
-                    pass
-
-            tasks = [
-                TaskStep(
-                    id=f"{name}-task-1",
-                    description=f"[{agent_cfg.role}] {task}",
-                ),
-            ]
-
-            milestone = Milestone(
-                id=name,
-                description=f"{agent_cfg.role}: {agent_cfg.description or task}",
-                dependencies=agent_cfg.depends_on,
-                tasks=tasks,
-                assigned_to=name,
-            )
-            milestones.append(milestone)
-
-            logger.info(
-                "compose.agent_milestone",
-                agent=name,
-                role=agent_cfg.role,
-                skills=skill_names,
-                depends_on=agent_cfg.depends_on,
-            )
-
-        return milestones
+    def _build_agent_skill_context(self, skill_names: list[str]) -> str:
+        """Build skill context string for injection into CopilotEngine."""
+        parts: list[str] = []
+        for sname in skill_names:
+            try:
+                skill = self._skill_loader.get(sname)
+                if skill:
+                    parts.append(f"### {skill.name}")
+                    if skill.approach:
+                        parts.append("Approach:")
+                        for step in skill.approach:
+                            parts.append(f"  - {step}")
+                    if skill.constraints:
+                        parts.append("Constraints:")
+                        for c in skill.constraints:
+                            parts.append(f"  - {c}")
+            except Exception:
+                pass
+        return "\n".join(parts)
 
     @property
     def team_name(self) -> str:

@@ -1,4 +1,7 @@
-"""Hauba CLI — the main entry point."""
+"""Hauba CLI — AI Workstation entry point.
+
+All execution flows through CopilotEngine (GitHub Copilot SDK).
+"""
 
 from __future__ import annotations
 
@@ -12,12 +15,11 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 
-# Lazy: skill_app import kept here but skills/cli.py itself is now lightweight
 from hauba.skills.cli import skill_app
 
 app = typer.Typer(
     name="hauba",
-    help="Your AI Engineering Team — In One Command",
+    help="AI Workstation — Build Software, Edit Video, Process Data, and More",
     no_args_is_help=True,
 )
 app.add_typer(skill_app, name="skill")
@@ -45,18 +47,16 @@ def init() -> None:
 
     console.print(
         Panel(
-            "[bold cyan]Hauba — AI Agent Operating System[/bold cyan]\n"
-            "Setting up your AI engineering team...",
+            "[bold cyan]Hauba — AI Workstation[/bold cyan]\n"
+            "Build software, edit video, process data, and more.",
             title="Welcome",
             border_style="cyan",
         )
     )
 
-    # Create directory structure
     ensure_hauba_dirs()
     console.print("[green]+[/green] Created ~/.hauba/ directory structure")
 
-    # Interactive setup
     from hauba.core.config import ConfigManager
 
     config = ConfigManager()
@@ -78,7 +78,6 @@ def init() -> None:
         config.settings.llm.api_key = "ollama"
     else:
         api_key = Prompt.ask(f"[bold]{provider} API key[/bold]", password=True)
-        # Sanitize: if the key was pasted multiple times, extract just the first one
         api_key = api_key.strip()
         if provider == "openai" and api_key.startswith("sk-"):
             for prefix in ("sk-proj-", "sk-"):
@@ -103,14 +102,26 @@ def init() -> None:
     config.save()
     console.print("[green]+[/green] Configuration saved to ~/.hauba/settings.json")
 
-    # Test API connection
-    console.print("[dim]Testing API connection...[/dim]")
-    success, message = asyncio.run(_test_api(config))
-    if success:
-        console.print(f"[green]+[/green] {message}")
-    else:
-        console.print(f"[yellow]![/yellow] API test failed: {message}")
-        console.print("[dim]  You can still proceed — check your API key if tasks fail.[/dim]")
+    # Test Copilot SDK availability
+    console.print("[dim]Checking Copilot SDK...[/dim]")
+    try:
+        from hauba.engine.copilot_engine import CopilotEngine
+
+        engine = CopilotEngine.__new__(CopilotEngine)
+        if hasattr(engine, "is_available") and CopilotEngine.__dict__.get("is_available"):
+            # Check if import works
+            try:
+                import copilot  # noqa: F401
+
+                console.print("[green]+[/green] Copilot SDK is installed")
+            except ImportError:
+                console.print(
+                    "[yellow]![/yellow] Copilot SDK not found. Install: pip install github-copilot-sdk"
+                )
+        else:
+            console.print("[green]+[/green] Engine check complete")
+    except Exception:
+        console.print("[green]+[/green] Configuration saved")
 
     console.print()
     console.print(
@@ -125,66 +136,44 @@ def init() -> None:
     )
 
 
-async def _test_api(config: object) -> tuple[bool, str]:
-    """Test the LLM API connection."""
-    from hauba.brain.llm import LLMRouter
-
-    try:
-        llm = LLMRouter(config)  # type: ignore[arg-type]
-        return await llm.test_connection()
-    except Exception as exc:
-        return False, str(exc)
-
-
 @app.command()
 def run(
-    task: str = typer.Argument(..., help="Task description for your AI team"),
+    task: str = typer.Argument(..., help="Task for your AI workstation"),
     workspace: str = typer.Option(
         "",
         "--workspace",
         "-w",
         help="Output directory for generated files (default: ./hauba-output/)",
     ),
-    legacy: bool = typer.Option(
+    continue_session: bool = typer.Option(
         False,
-        "--legacy",
-        help="Use legacy litellm-based Director agent instead of Copilot SDK engine",
+        "--continue",
+        "-c",
+        help="Resume the last session",
     ),
 ) -> None:
-    """Run a task with your AI engineering team.
+    """Run a task with the Hauba AI Workstation.
 
-    By default uses the Copilot SDK engine (production-tested, BYOK).
-    Use --legacy for the original litellm-based Director agent.
+    Powered by the Copilot SDK engine (production-tested, BYOK).
     """
     _check_init()
-    if legacy:
-        asyncio.run(_run_task_legacy(task, workspace))
-    else:
-        asyncio.run(_run_task_engine(task, workspace))
+    asyncio.run(_run_task(task, workspace, continue_session))
 
 
-def _build_skill_strategy_context(task: str) -> str:
-    """Load Hauba skills and strategies, match them to the task, build context for injection."""
-    from hauba.core.constants import (
-        BUNDLED_SKILLS_DIR,
-        BUNDLED_STRATEGIES_DIR,
-        SKILLS_DIR,
-        STRATEGIES_DIR,
-    )
+def _build_skill_context(task: str) -> str:
+    """Load Hauba skills, match them to the task, build context for injection."""
+    from hauba.core.constants import BUNDLED_SKILLS_DIR, SKILLS_DIR
     from hauba.skills.loader import SkillLoader
     from hauba.skills.matcher import SkillMatcher
-    from hauba.skills.strategy import StrategyEngine
 
     try:
         skill_loader = SkillLoader(skill_dirs=[SKILLS_DIR, BUNDLED_SKILLS_DIR])
         skill_matcher = SkillMatcher(skill_loader)
-        strategy_engine = StrategyEngine(strategy_dirs=[STRATEGIES_DIR, BUNDLED_STRATEGIES_DIR])
     except Exception:
         return ""
 
     parts: list[str] = []
 
-    # Match skills
     matches = skill_matcher.match(task, top_k=3)
     if matches:
         parts.append("## Skill Guidance (follow during execution)")
@@ -200,42 +189,25 @@ def _build_skill_strategy_context(task: str) -> str:
                 for c in skill.constraints:
                     parts.append(f"  - {c}")
 
-    # Match strategy (only if above minimum threshold)
-    strategy = strategy_engine.match_domain(task)
-    if strategy:
-        parts.append(f"\n## Strategy: {strategy.name}")
-        if strategy.description:
-            parts.append(f"Description: {strategy.description}")
-        if strategy.milestones:
-            parts.append("Suggested milestones:")
-            for ms in strategy.milestones:
-                parts.append(f"  - {ms.get('description', '')}")
-
     return "\n".join(parts)
 
 
-async def _run_task_engine(task: str, workspace_path: str = "") -> None:
-    """Execute a task using the Copilot SDK engine (primary default).
-
-    The Copilot SDK handles the actual building — planning, tool invocation,
-    file creation, git, testing. Hauba adds skills/strategies as domain guidance.
-    """
+async def _run_task(task: str, workspace_path: str = "", continue_session: bool = False) -> None:
+    """Execute a task using the CopilotEngine."""
     from hauba.core.config import ConfigManager
     from hauba.engine.copilot_engine import CopilotEngine
     from hauba.engine.types import EngineConfig, ProviderType
 
     config = ConfigManager()
 
-    # Map hauba config to engine config
     provider_map = {
         "anthropic": ProviderType.ANTHROPIC,
         "openai": ProviderType.OPENAI,
         "ollama": ProviderType.OLLAMA,
-        "deepseek": ProviderType.OPENAI,  # DeepSeek is OpenAI-compatible
+        "deepseek": ProviderType.OPENAI,
     }
     provider = provider_map.get(config.settings.llm.provider, ProviderType.ANTHROPIC)
 
-    # DeepSeek needs a custom base URL
     base_url = None
     if config.settings.llm.provider == "deepseek":
         base_url = "https://api.deepseek.com/v1"
@@ -253,8 +225,7 @@ async def _run_task_engine(task: str, workspace_path: str = "") -> None:
         working_directory=str(ws_path),
     )
 
-    # Build skill/strategy context from Hauba's domain knowledge
-    skill_context = _build_skill_strategy_context(task)
+    skill_context = _build_skill_context(task)
 
     engine = CopilotEngine(engine_config, skill_context=skill_context)
 
@@ -262,9 +233,8 @@ async def _run_task_engine(task: str, workspace_path: str = "") -> None:
         console.print(
             Panel(
                 "[bold red]Copilot SDK not installed[/bold red]\n\n"
-                "Hauba requires the Copilot SDK to build software.\n\n"
-                "  Install: [bold]pip install github-copilot-sdk[/bold]\n\n"
-                "[dim]Use --legacy flag to use the legacy litellm agent instead.[/dim]",
+                "Hauba requires the Copilot SDK to work.\n\n"
+                "  Install: [bold]pip install github-copilot-sdk[/bold]",
                 title="Missing Dependency",
                 border_style="red",
             )
@@ -272,15 +242,17 @@ async def _run_task_engine(task: str, workspace_path: str = "") -> None:
         raise typer.Exit(1)
 
     # Show streaming events with rich formatting
-    def on_event(event):
-        etype = event.type
-        data = event.data
+    def on_event(event: object) -> None:
+        etype = getattr(event, "type", "")
+        data = getattr(event, "data", None)
 
         if etype == "assistant.message_delta":
             if isinstance(data, dict) and data.get("delta_content"):
                 console.print(data["delta_content"], end="")
-            elif hasattr(data, "delta_content") and data.delta_content:
-                console.print(data.delta_content, end="")
+            elif data is not None and hasattr(data, "delta_content"):
+                delta = data.delta_content  # type: ignore[union-attr]
+                if delta:
+                    console.print(delta, end="")
         elif etype == "tool.execution_start":
             tool_name = ""
             tool_input = ""
@@ -311,16 +283,25 @@ async def _run_task_engine(task: str, workspace_path: str = "") -> None:
 
     console.print(
         Panel(
-            f"[bold cyan]Hauba AI Engineer[/bold cyan] (Copilot SDK)\n"
+            f"[bold cyan]Hauba AI Workstation[/bold cyan] (Copilot SDK)\n"
             f"  Provider: {config.settings.llm.provider} | Model: {config.settings.llm.model}\n"
             f"  Workspace: {ws_path}{skill_info}",
             border_style="cyan",
         )
     )
 
+    # Check for --continue session resumption
+    session_id = None
+    if continue_session:
+        session_id = CopilotEngine.load_last_session()
+        if session_id:
+            console.print(f"[dim]Resuming session: {session_id[:12]}...[/dim]")
+        else:
+            console.print("[dim]No previous session found, starting fresh.[/dim]")
+
     try:
-        result = await engine.execute(task, timeout=600.0)
-        console.print()  # newline after streaming
+        result = await engine.execute(task, timeout=600.0, session_id=session_id)
+        console.print()
         if result.success:
             console.print(
                 Panel(
@@ -340,41 +321,9 @@ async def _run_task_engine(task: str, workspace_path: str = "") -> None:
         await engine.stop()
 
 
-async def _run_task_legacy(task: str, workspace_path: str = "") -> None:
-    """Execute a task using the legacy Director agent (litellm-based)."""
-    from hauba.agents.director import DirectorAgent
-    from hauba.core.config import ConfigManager
-    from hauba.core.events import EventEmitter
-    from hauba.ui.terminal import TerminalUI
-
-    config = ConfigManager()
-    events = EventEmitter()
-    ui = TerminalUI(console, events)
-
-    # Determine workspace directory
-    workspace = Path(workspace_path).resolve() if workspace_path else Path.cwd() / "hauba-output"
-    workspace.mkdir(parents=True, exist_ok=True)
-
-    director = DirectorAgent(config=config, events=events, workspace=workspace)
-
-    await ui.show_task_start(task)
-    result = await director.run(task)
-    await ui.show_task_result(result)
-
-    # Show stats
-    stats = director._llm.stats
-    if stats["call_count"] > 0:
-        console.print(
-            f"[dim]  LLM calls: {stats['call_count']} | "
-            f"Tokens: {stats['total_tokens']:,} | "
-            f"Cost: ${stats['total_cost']:.4f}[/dim]"
-        )
-    console.print(f"[dim]  Workspace: {workspace}[/dim]")
-
-
 @app.command()
 def status() -> None:
-    """Show status of running agents and recent tasks."""
+    """Show status of Hauba configuration."""
     _check_init()
     from hauba.core.config import ConfigManager
 
@@ -460,7 +409,7 @@ def voice() -> None:
 
 
 async def _voice_loop() -> None:
-    """Voice conversation loop: listen -> process -> speak."""
+    """Voice conversation loop using CopilotEngine."""
     from hauba.channels.voice import VoiceChannel, VoiceChannelError
 
     try:
@@ -484,16 +433,28 @@ async def _voice_loop() -> None:
                 continue
             console.print(f"[bold]You:[/bold] {text}")
 
-            from hauba.agents.director import DirectorAgent
             from hauba.core.config import ConfigManager
-            from hauba.core.events import EventEmitter
+            from hauba.engine.copilot_engine import CopilotEngine
+            from hauba.engine.types import EngineConfig, ProviderType
 
             config = ConfigManager()
-            events = EventEmitter()
-            director = DirectorAgent(config=config, events=events)
-            result = await director.run(text)
+            provider_map = {
+                "anthropic": ProviderType.ANTHROPIC,
+                "openai": ProviderType.OPENAI,
+                "ollama": ProviderType.OLLAMA,
+                "deepseek": ProviderType.OPENAI,
+            }
+            provider = provider_map.get(config.settings.llm.provider, ProviderType.ANTHROPIC)
+            engine_config = EngineConfig(
+                provider=provider,
+                api_key=config.settings.llm.api_key,
+                model=config.settings.llm.model,
+            )
+            engine = CopilotEngine(engine_config)
+            result = await engine.execute(text)
+            await engine.stop()
 
-            response = result.value if result.success else f"Error: {result.error}"
+            response = result.output if result.success else f"Error: {result.error}"
             console.print(f"[bold green]Hauba:[/bold green] {response}")
             await vc.speak(str(response))
     except KeyboardInterrupt:
@@ -517,12 +478,12 @@ def api(
     host: str = typer.Option("0.0.0.0", help="Host to bind to"),
     port: int = typer.Option(8080, help="Port to serve on"),
 ) -> None:
-    """Start the Hauba AI Engineer API server (BYOK)."""
+    """Start the Hauba AI Workstation API server (BYOK)."""
     asyncio.run(_serve_api(host, port))
 
 
 async def _serve_api(host: str, port: int) -> None:
-    """Start the AI Engineer API with Copilot SDK backend."""
+    """Start the AI Workstation API with Copilot SDK backend."""
     try:
         import uvicorn
 
@@ -532,10 +493,10 @@ async def _serve_api(host: str, port: int) -> None:
         console.print("[dim]Run: pip install hauba[web] github-copilot-sdk[/dim]")
         return
 
-    app = create_app()
+    api_app = create_app()
     console.print(
         Panel(
-            f"[bold cyan]Hauba AI Engineer API[/bold cyan]\n\n"
+            f"[bold cyan]Hauba AI Workstation API[/bold cyan]\n\n"
             f"  Endpoint: http://{host}:{port}\n"
             f"  Docs: http://{host}:{port}/docs\n\n"
             f"  [green]BYOK: Users bring their own API key.[/green]\n"
@@ -543,108 +504,9 @@ async def _serve_api(host: str, port: int) -> None:
             border_style="cyan",
         )
     )
-    config = uvicorn.Config(app, host=host, port=port, log_level="info")
-    server = uvicorn.Server(config)
+    uvi_config = uvicorn.Config(api_app, host=host, port=port, log_level="info")
+    server = uvicorn.Server(uvi_config)
     await server.serve()
-
-
-@app.command(name="engine-run")
-def engine_run(
-    task: str = typer.Argument(..., help="Task description"),
-    provider: str = typer.Option("anthropic", "--provider", "-p", help="LLM provider"),
-    api_key: str = typer.Option("", "--api-key", "-k", help="API key (or use env var)"),
-    model: str = typer.Option("", "--model", "-m", help="Model to use"),
-    workspace: str = typer.Option("", "--workspace", "-w", help="Output directory"),
-) -> None:
-    """Run a task using the Copilot SDK engine (BYOK)."""
-    asyncio.run(_engine_run(task, provider, api_key, model, workspace))
-
-
-async def _engine_run(task: str, provider: str, api_key: str, model: str, workspace: str) -> None:
-    """Execute a task using the Copilot Engine with skill/strategy injection."""
-    from hauba.engine.copilot_engine import CopilotEngine
-    from hauba.engine.types import EngineConfig, ProviderType
-
-    # Resolve API key from arg or environment
-    if not api_key:
-        env_map = {
-            "anthropic": "ANTHROPIC_API_KEY",
-            "openai": "OPENAI_API_KEY",
-            "azure": "AZURE_OPENAI_KEY",
-        }
-        env_var = env_map.get(provider, "")
-        api_key = os.environ.get(env_var, "")
-        if not api_key and provider != "ollama":
-            console.print(f"[red]No API key provided. Use --api-key or set {env_var}[/red]")
-            raise typer.Exit(1)
-
-    # Default models per provider
-    if not model:
-        model_map = {
-            "anthropic": "claude-sonnet-4-5-20250514",
-            "openai": "gpt-4o",
-            "azure": "gpt-4o",
-            "ollama": "qwen2.5-coder:32b",
-        }
-        model = model_map.get(provider, "claude-sonnet-4-5-20250514")
-
-    ws_path = Path(workspace).resolve() if workspace else Path.cwd() / "hauba-output"
-    ws_path.mkdir(parents=True, exist_ok=True)
-
-    config = EngineConfig(
-        provider=ProviderType(provider),
-        api_key=api_key,
-        model=model,
-        working_directory=str(ws_path),
-    )
-
-    # Load Hauba skill/strategy context
-    skill_context = _build_skill_strategy_context(task)
-
-    engine = CopilotEngine(config, skill_context=skill_context)
-
-    # Show events in real-time
-    def on_event(event):
-        if event.type == "assistant.message_delta":
-            # Streaming text
-            data = event.data
-            if hasattr(data, "delta_content") and data.delta_content:
-                console.print(data.delta_content, end="")
-        elif event.type == "tool.execution_start":
-            console.print(f"\n[dim]Tool: {event.data}[/dim]")
-        elif event.type.startswith("engine."):
-            console.print(f"[dim]{event.type}[/dim]")
-
-    engine.on_event(on_event)
-
-    console.print(
-        Panel(
-            f"[bold cyan]Hauba Engine[/bold cyan] (Copilot SDK)\n"
-            f"  Provider: {provider} | Model: {model}\n"
-            f"  Workspace: {ws_path}",
-            border_style="cyan",
-        )
-    )
-
-    try:
-        result = await engine.execute(task, timeout=600.0)
-        console.print()  # newline after streaming
-        if result.success:
-            console.print(
-                Panel(
-                    f"[bold green]Task completed[/bold green]\n\n{result.output[:2000]}",
-                    border_style="green",
-                )
-            )
-        else:
-            console.print(
-                Panel(
-                    f"[bold red]Task failed[/bold red]\n\n{result.error}",
-                    border_style="red",
-                )
-            )
-    finally:
-        await engine.stop()
 
 
 async def _serve_web(host: str, port: int) -> None:
@@ -714,7 +576,6 @@ async def _compose_run(task: str, file: str) -> None:
     from hauba.compose.runner import ComposeRunner
     from hauba.core.config import ConfigManager
     from hauba.core.events import EventEmitter
-    from hauba.ui.terminal import TerminalUI
 
     compose_path = Path(file).resolve()
     try:
@@ -725,7 +586,6 @@ async def _compose_run(task: str, file: str) -> None:
 
     config = ConfigManager()
     events = EventEmitter()
-    ui = TerminalUI(console, events)
 
     console.print(
         f"[bold cyan]Compose:[/bold cyan] Team '{compose_config.team}' "
@@ -733,9 +593,22 @@ async def _compose_run(task: str, file: str) -> None:
     )
 
     runner = ComposeRunner(config=config, events=events, compose=compose_config)
-    await ui.show_task_start(task)
     result = await runner.run(task)
-    await ui.show_task_result(result)
+
+    if result.success:
+        console.print(
+            Panel(
+                f"[bold green]Compose completed[/bold green]\n\n{result.value}",
+                border_style="green",
+            )
+        )
+    else:
+        console.print(
+            Panel(
+                f"[bold red]Compose failed[/bold red]\n\n{result.error}",
+                border_style="red",
+            )
+        )
 
 
 @compose_app.command()

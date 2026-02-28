@@ -60,3 +60,41 @@
 - Cannot reproduce: gather more data, check environment differences
 - Root cause is in a dependency: file upstream issue, apply workaround with comment
 - Performance regression: benchmark before and after with reproducible workload
+
+## Playbook: Bug Fixing
+
+### Milestone 1: Reproduce
+- Gather bug report details: expected vs actual, steps to reproduce
+- Set up reproduction environment matching reporter's context
+- Write a failing test that demonstrates the bug
+- Confirm the bug is reproducible and document exact trigger
+
+### Milestone 2: Isolate
+- Trace execution from trigger point through affected code paths
+- Add diagnostic logging at key decision points
+- Narrow scope using binary search or git bisect if regression
+- Identify the exact function or line where behavior diverges
+
+### Milestone 3: Root Cause
+- Analyze the isolated code for the underlying defect
+- Distinguish symptoms from root cause
+- Document why the bug exists (missing check, wrong logic, race condition)
+- Assess blast radius: are other code paths affected?
+
+### Milestone 4: Fix
+- Write the fix targeting the root cause, not symptoms
+- Keep changes minimal and focused
+- Update the failing test to verify the fix
+- Add edge case tests discovered during investigation
+
+### Milestone 5: Regression Test
+- Run full test suite and confirm all tests pass
+- Test related functionality for side effects
+- Verify fix in the same environment where bug was reported
+- Write commit message documenting root cause and fix
+
+### Milestone 6: Deploy
+- Submit fix for code review
+- Deploy to staging and verify
+- Deploy to production with monitoring
+- Close bug report with root cause summary

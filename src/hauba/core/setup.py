@@ -16,7 +16,6 @@ from hauba.core.constants import (
     MEMORY_DIR,
     OWNER_MEMORY_DIR,
     SKILLS_DIR,
-    STRATEGIES_DIR,
 )
 
 logger = structlog.get_logger()
@@ -29,7 +28,6 @@ REQUIRED_DIRS = [
     KNOWLEDGE_DIR,
     CONTEXT_DIR,
     SKILLS_DIR,
-    STRATEGIES_DIR,
     LOGS_DIR,
     BACKUPS_DIR,
 ]
@@ -49,7 +47,6 @@ def ensure_hauba_dirs(base: Path | None = None) -> Path:
             home / "memory" / "knowledge",
             home / "memory" / "context",
             home / "skills",
-            home / "strategies",
             home / "logs",
             home / "backups",
         ]

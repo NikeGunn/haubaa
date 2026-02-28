@@ -63,3 +63,41 @@
 - Build failure: check dependency versions, clear caches, rebuild
 - Authentication flow broken: verify token signing keys and expiry config
 - Frontend build errors: check TypeScript types, missing imports, CSS conflicts
+
+## Playbook: SaaS Application
+
+### Milestone 1: Architecture
+- Analyze requirements and identify core entities and relationships
+- Design database schema with migration strategy
+- Define API contract (RESTful endpoints with OpenAPI spec)
+- Create project scaffold with chosen tech stack
+
+### Milestone 2: Auth & Database
+- Implement database models and initial migrations
+- Set up authentication flow (signup, login, JWT/session)
+- Implement role-based access control
+- Add password hashing and token management
+
+### Milestone 3: API Layer
+- Implement CRUD endpoints for each resource
+- Add input validation and error handling
+- Implement pagination, filtering, and sorting
+- Add rate limiting and request logging
+
+### Milestone 4: Frontend
+- Set up frontend project with routing and layout
+- Build authentication pages (login, signup, password reset)
+- Implement dashboard and core feature pages
+- Add API client with error handling and loading states
+
+### Milestone 5: DevOps
+- Create Dockerfile with multi-stage build
+- Configure CI/CD pipeline (lint, test, build, deploy)
+- Set up monitoring and health check endpoints
+- Configure secrets management
+
+### Milestone 6: Launch
+- Run full test suite with coverage report
+- Perform security audit (OWASP Top 10 checklist)
+- Write deployment documentation and runbook
+- Execute launch checklist and verify production

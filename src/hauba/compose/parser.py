@@ -92,7 +92,6 @@ def _build_config(data: dict) -> ComposeConfig:
         model=data.get("model", ""),
         settings=settings,
         agents=agents,
-        strategy=data.get("strategy", ""),
         output=data.get("output", "./output"),
     )
 

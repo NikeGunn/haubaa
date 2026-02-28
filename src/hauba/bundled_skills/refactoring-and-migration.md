@@ -62,3 +62,41 @@
 - Data migration error: restore from backup, fix migration script, re-run
 - Performance regression: profile both old and new code, optimize hot paths
 - Incomplete migration: maintain compatibility shim until migration is complete
+
+## Playbook: Code Review & Refactor
+
+### Milestone 1: Audit
+- Run static analysis and collect code metrics (complexity, duplication, coverage)
+- Identify code smells, anti-patterns, and technical debt
+- Map dependency graph and circular dependencies
+- Document current architecture strengths and weaknesses
+
+### Milestone 2: Identify Debt
+- Rank issues by impact (bug risk, maintenance cost, performance)
+- Group related issues into refactoring themes
+- Estimate effort for each refactoring item
+- Create prioritized backlog with justification
+
+### Milestone 3: Plan Refactor
+- Design target state for each refactoring theme
+- Plan incremental steps (each deployable independently)
+- Identify tests needed before refactoring
+- Define rollback strategy for each step
+
+### Milestone 4: Execute
+- Add test coverage for code being refactored
+- Apply refactoring one step at a time with passing tests
+- Update documentation and type hints
+- Review each step for correctness before proceeding
+
+### Milestone 5: Test
+- Run full test suite and confirm all pass
+- Verify behavior is unchanged (regression testing)
+- Check that performance is equal or better
+- Validate API compatibility for public interfaces
+
+### Milestone 6: Measure
+- Re-run code metrics and compare with baseline
+- Document what was changed and why
+- Update architecture documentation
+- Record lessons learned for future refactoring

@@ -249,47 +249,11 @@ class QualityGateEngine:
             errors=findings,
         )
 
-    async def check_self_review(self, code: str, llm_router: Any = None) -> GateResult:
-        """LLM self-reviews its own output for quality."""
-        if not llm_router:
-            return GateResult(
-                QualityGateType.SELF_REVIEW,
-                passed=True,
-                score=0.7,
-                details="Skipped (no LLM available)",
-            )
-
-        from hauba.core.types import LLMMessage
-
-        messages = [
-            LLMMessage(
-                role="system",
-                content="Review this code for correctness, best practices, and potential issues. "
-                "Respond with SCORE: <0.0-1.0> and ISSUES: <comma-separated list or 'none'>",
-            ),
-            LLMMessage(role="user", content=f"Review this code:\n\n{code[:3000]}"),
-        ]
-
-        response = await llm_router.complete(messages, temperature=0.1)
-
-        # Parse score
-        score = 0.7
-        issues = []
-        for line in response.content.split("\n"):
-            if line.strip().upper().startswith("SCORE:"):
-                try:
-                    score = float(line.split(":")[1].strip())
-                except ValueError:
-                    pass
-            elif line.strip().upper().startswith("ISSUES:"):
-                issue_text = line.split(":", 1)[1].strip()
-                if issue_text.lower() != "none":
-                    issues = [i.strip() for i in issue_text.split(",")]
-
+    async def check_self_review(self, code: str, **kwargs: Any) -> GateResult:
+        """Self-review gate (placeholder — Copilot SDK handles quality internally)."""
         return GateResult(
             QualityGateType.SELF_REVIEW,
-            passed=score >= 0.6,
-            score=max(0.0, min(1.0, score)),
-            details=f"LLM review score: {score:.1f}",
-            errors=issues,
+            passed=True,
+            score=0.7,
+            details="Skipped (Copilot SDK handles quality internally)",
         )

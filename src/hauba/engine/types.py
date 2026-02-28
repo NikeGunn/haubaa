@@ -41,6 +41,8 @@ class EngineConfig:
     skill_directories: list[str] = field(default_factory=list)
     streaming: bool = True
     copilot_cli_path: str | None = None
+    session_persist: bool = True
+    auto_install_deps: bool = True
 
     def to_provider_config(self) -> dict[str, Any]:
         """Convert to Copilot SDK ProviderConfig format."""

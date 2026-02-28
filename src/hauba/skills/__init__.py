@@ -1,1 +1,1 @@
-"""Hauba skill system — .md skill files and .yaml strategies."""
+"""Hauba skill system — pluggable .md skill files for domain-specific intelligence."""

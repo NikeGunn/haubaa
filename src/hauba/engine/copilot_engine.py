@@ -1,20 +1,24 @@
-"""Copilot Engine — production-grade agentic runtime powered by GitHub Copilot SDK.
+"""Copilot Engine — the single execution brain for Hauba AI Workstation.
 
-This is the core execution engine for Hauba. It wraps the Copilot SDK to provide:
+Powered by the GitHub Copilot SDK. This is the ONLY execution engine in Hauba.
+
+Capabilities:
 - BYOK (Bring Your Own Key) — user brings their API key, Hauba owner pays nothing
 - Production-tested agent runtime (planning, tool invocation, file edits, git)
 - Infinite sessions with automatic context compaction
-- Custom tools via Hauba's TaskLedger integration
+- Session persistence for resuming interrupted tasks
 - Streaming events for real-time UI updates
+- Full AI Workstation: software, video, data, ML, docs, automation
 
 Architecture:
-    User Request → CopilotEngine → Copilot SDK → Copilot CLI Server → Agent Runtime
-                                                                         ↓
-                                                              (bash, files, git, web)
+    User Request → CopilotEngine → Copilot SDK → Agent Runtime
+                                                      ↓
+                                           (bash, files, git, web)
 """
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -28,20 +32,17 @@ logger = structlog.get_logger()
 
 
 class CopilotEngine:
-    """Production-grade agentic engine powered by Copilot SDK.
+    """The single execution brain for Hauba AI Workstation.
 
-    This engine provides:
-    - BYOK support (Anthropic, OpenAI, Azure, Ollama)
-    - Full agentic loop (planning, tool use, file edits, git)
-    - Infinite sessions with automatic context compaction
-    - Real-time event streaming
-    - Custom Hauba tools (TaskLedger verification)
+    Wraps the GitHub Copilot SDK to provide a professional AI workstation
+    that can build software, edit videos, process data, train ML models,
+    generate documents, scrape websites, and automate workflows.
 
     Example:
         >>> config = EngineConfig(
         ...     provider=ProviderType.ANTHROPIC,
         ...     api_key="sk-ant-...",
-        ...     model="claude-sonnet-4.5",
+        ...     model="claude-sonnet-4-5",
         ... )
         >>> engine = CopilotEngine(config)
         >>> result = await engine.execute("Build a REST API with auth")
@@ -73,7 +74,6 @@ class CopilotEngine:
         except ImportError:
             raise RuntimeError("Copilot SDK not installed. Run: pip install github-copilot-sdk")
 
-        # Build client options — SDK bundles its own CLI binary (auto_start=True)
         client_options: dict[str, Any] = {}
         if self._config.copilot_cli_path:
             client_options["cli_path"] = self._config.copilot_cli_path
@@ -83,7 +83,6 @@ class CopilotEngine:
         self._client = CopilotClient(client_options or None)
         await self._client.start()
 
-        # Verify connection
         ping = await self._client.ping("hauba-engine")
         logger.info("engine.connected", ping=ping.message)
 
@@ -157,10 +156,8 @@ class CopilotEngine:
         self._emit_event(EngineEvent(type="engine.task_started", timestamp=time.time()))
 
         try:
-            # Build session config
             session_config = self._build_session_config(system_message)
 
-            # Create or resume session
             if session_id:
                 self._session = await self._client.resume_session(session_id, session_config)
                 logger.info("engine.session_resumed", session_id=session_id)
@@ -171,10 +168,8 @@ class CopilotEngine:
                     session_id=self._session.session_id,
                 )
 
-            # Subscribe to all session events
             self._session.on(self._handle_session_event)
 
-            # Send instruction and wait for completion
             self._emit_event(
                 EngineEvent(
                     type="engine.executing",
@@ -188,7 +183,6 @@ class CopilotEngine:
                 timeout=timeout,
             )
 
-            # Extract result
             output = ""
             if response and hasattr(response, "data"):
                 data = response.data
@@ -203,10 +197,16 @@ class CopilotEngine:
                 )
             )
 
-            return EngineResult.ok(
+            result = EngineResult.ok(
                 output=output,
                 session_id=self._session.session_id,
             )
+
+            # Persist session for --continue support
+            if self._config.session_persist:
+                self._save_session(self._session.session_id)
+
+            return result
 
         except TimeoutError:
             self._emit_event(EngineEvent(type="engine.timeout", timestamp=time.time()))
@@ -235,11 +235,9 @@ class CopilotEngine:
             "streaming": self._config.streaming,
         }
 
-        # Set working directory
         if self._config.working_directory:
             config["working_directory"] = str(Path(self._config.working_directory).resolve())
 
-        # Build system message
         hauba_system = self._build_hauba_system_prompt()
         if system_message:
             hauba_system += f"\n\n{system_message}"
@@ -249,18 +247,15 @@ class CopilotEngine:
             "content": hauba_system,
         }
 
-        # Add skill directories
         if self._config.skill_directories:
             config["skill_directories"] = self._config.skill_directories
 
-        # Add bundled skills directory
         bundled_skills = Path(__file__).parent.parent / "bundled_skills"
         if bundled_skills.exists():
             dirs = config.get("skill_directories", [])
             dirs.append(str(bundled_skills))
             config["skill_directories"] = dirs
 
-        # Infinite sessions for long-running tasks
         config["infinite_sessions"] = {
             "enabled": True,
             "background_compaction_threshold": 0.80,
@@ -270,60 +265,96 @@ class CopilotEngine:
         return config
 
     def _build_hauba_system_prompt(self) -> str:
-        """Build the Hauba AI Engineer system prompt.
+        """Build the Hauba AI Workstation system prompt.
 
-        This prompt transforms the generic Copilot agent into a professional
-        AI software engineer that follows Hauba's execution protocol.
-        Skill/strategy context is appended when available.
+        This prompt transforms the Copilot SDK agent into a professional
+        AI workstation capable of software engineering, video editing,
+        data processing, ML, document generation, and automation.
         """
-        prompt = """## You are Hauba AI Engineer
+        prompt = """## You are Hauba AI Workstation
 
-You are a professional AI software engineer powered by Hauba. You ship production-ready code.
-You MUST use your tools (bash, files, git) to actually create files and build working software.
+You are a professional AI workstation powered by Hauba. You don't just write code — you build
+real software, edit videos, process data, train ML models, generate documents, scrape websites,
+and automate workflows. You are the smartest AI engineer in the market.
+
+You MUST use your tools (bash, files, git) to actually create files and produce real outputs.
 Never just describe what you would do — DO IT by calling tools.
+
+### CAPABILITIES
+
+You can handle ANY task that can be done with Python and command-line tools:
+- **Software Engineering**: Build full-stack apps, APIs, databases, deployments
+- **Video Editing**: Trim, concatenate, add effects/subtitles using MoviePy
+- **Data Processing**: Analyze CSV/Excel/JSON with pandas, create visualizations
+- **Machine Learning**: Train models with scikit-learn, evaluate, serialize, huggingface integration
+- **Document Generation**: Create PDFs, presentations, spreadsheets
+- **Web Scraping**: Extract data from websites with BeautifulSoup/Playwright
+- **Automation**: Build scripts, CLI tools, batch processors
+- **Image Processing**: Manipulate images with Pillow
 
 ### EXECUTION PROTOCOL (MANDATORY)
 
-Follow this 5-phase protocol for every task:
+Follow this 5-phase protocol for EVERY task:
 
 **Phase 1: UNDERSTAND**
-- Read the instruction carefully
-- Identify what needs to be built, fixed, or changed
-- List the technologies and files involved
+- Read the instruction carefully — what exactly needs to be built or done?
+- Identify technologies, files, and dependencies involved
+- Check if the task requires installing Python packages
 
 **Phase 2: PLAN**
-- Break the task into concrete steps
+- Break the task into concrete, ordered steps
 - Identify dependencies between steps
+- If a matched skill has a Playbook section, follow its milestones
 - Consider edge cases and error handling
 
 **Phase 3: IMPLEMENT**
+- Install required Python packages: `pip install <package>` as needed
 - Write clean, production-ready code
 - Follow best practices for the language/framework
-- Handle errors properly
+- Handle errors properly — no silent failures
 - Write secure code (no hardcoded secrets, proper input validation)
 - Create ALL necessary files — no placeholders, no TODOs, no stubs
 
 **Phase 4: VERIFY**
-- After writing code, verify it compiles/runs
-- Run any existing tests
-- Check that the output matches the requirements
-- Fix any issues found
+- After creating files, verify they exist and have correct content
+- Run code to confirm it works (compile, execute, test)
+- Check that output matches requirements
+- Fix any issues found — max 3 retries per step
 
 **Phase 5: DELIVER**
-- Summarize what was done
-- List files created/modified
-- Note any follow-up tasks or considerations
+- Summarize what was accomplished
+- List all files created/modified
+- Note any setup steps or follow-up tasks
+
+### TOOL INSTALLATION
+
+When a task requires a Python package you don't have:
+1. Install it: `pip install moviepy pandas scikit-learn pillow reportlab beautifulsoup4`
+2. Verify the install: `python -c "import <package>; print('OK')"`
+3. Proceed with the task
+
+Common packages by domain:
+- Video: moviepy, imageio[ffmpeg]
+- Data: pandas, matplotlib, seaborn, plotly, openpyxl
+- ML: scikit-learn, joblib, numpy, huggingface transformers
+- Images: Pillow, cairosvg
+- Documents: reportlab, python-pptx, openpyxl, jinja2, weasyprint
+- Web scraping: beautifulsoup4, requests, lxml
+- Automation: click, typer, schedule
 
 ### RULES
+
 - Always use the tools available to you (bash, files, git)
 - Never hallucinate file contents — read files before modifying them
 - Verify your work after each step
-- If something fails, try a different approach (max 3 retries)
+- If something fails, analyze the error and try a different approach (max 3 retries)
 - Write clean commit messages if using git
 - Do NOT skip the verification step
+- When installing packages, use `pip install` in the workspace
+- For web apps, always include a README with setup instructions
 """
         if self._skill_context:
-            prompt += f"\n{self._skill_context}\n"
+            prompt += f"\n### SKILL GUIDANCE\n\n{self._skill_context}\n"
 
         return prompt
 
@@ -337,6 +368,32 @@ Follow this 5-phase protocol for every task:
             timestamp=time.time(),
         )
         self._emit_event(engine_event)
+
+    def _save_session(self, session_id: str) -> None:
+        """Save session ID for --continue support."""
+        try:
+            from hauba.core.constants import LAST_SESSION_FILE
+
+            LAST_SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+            LAST_SESSION_FILE.write_text(
+                json.dumps({"session_id": session_id, "timestamp": time.time()}),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            logger.debug("engine.session_save_failed", error=str(e))
+
+    @staticmethod
+    def load_last_session() -> str | None:
+        """Load the last saved session ID for --continue support."""
+        try:
+            from hauba.core.constants import LAST_SESSION_FILE
+
+            if LAST_SESSION_FILE.exists():
+                data = json.loads(LAST_SESSION_FILE.read_text(encoding="utf-8"))
+                return data.get("session_id")
+        except Exception:
+            pass
+        return None
 
     async def __aenter__(self) -> CopilotEngine:
         await self.start()

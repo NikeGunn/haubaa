@@ -24,6 +24,8 @@ class Skill:
     when_to_use: list[str] = field(default_factory=list)
     approach: list[str] = field(default_factory=list)
     constraints: list[str] = field(default_factory=list)
+    tools_required: list[str] = field(default_factory=list)
+    playbook: str = ""
     raw_content: str = ""
 
     @property
@@ -117,6 +119,7 @@ class SkillLoader:
 
         # Parse sections
         current_section = ""
+        playbook_lines: list[str] = []
         for line in lines:
             stripped = line.strip()
 
@@ -132,8 +135,22 @@ class SkillLoader:
             elif stripped.startswith("## Constraints") or stripped.startswith("## constraints"):
                 current_section = "constraints"
                 continue
-            elif stripped.startswith("## "):
+            elif stripped.startswith("## Tools Required") or stripped.startswith(
+                "## tools required"
+            ):
+                current_section = "tools_required"
+                continue
+            elif stripped.startswith("## Playbook"):
+                current_section = "playbook"
+                playbook_lines.append(line)
+                continue
+            elif stripped.startswith("## ") and current_section != "playbook":
                 current_section = ""
+                continue
+
+            # Playbook captures everything (including sub-headers)
+            if current_section == "playbook":
+                playbook_lines.append(line)
                 continue
 
             if not stripped or stripped.startswith("#"):
@@ -152,5 +169,10 @@ class SkillLoader:
                 skill.approach.append(item)
             elif current_section == "constraints":
                 skill.constraints.append(item)
+            elif current_section == "tools_required":
+                skill.tools_required.append(item)
+
+        if playbook_lines:
+            skill.playbook = "\n".join(playbook_lines).strip()
 
         return skill

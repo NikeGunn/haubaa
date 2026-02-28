@@ -60,3 +60,41 @@
 - Outdated information: check release dates, look for newer alternatives
 - Analysis paralysis: set a timebox, make a recommendation with stated confidence level
 - Missing information: document what is unknown and how it affects the recommendation
+
+## Playbook: Research & Prototype
+
+### Milestone 1: Define Question
+- Clarify the research objective and what decisions it informs
+- Define scope boundaries and constraints
+- List known starting points and existing knowledge
+- Establish evaluation criteria for candidate solutions
+
+### Milestone 2: Gather Sources
+- Search official documentation and primary sources
+- Review existing implementations and case studies
+- Collect benchmark data and performance characteristics
+- Identify community consensus and common pitfalls
+
+### Milestone 3: Analyze
+- Build comparison matrix with consistent criteria
+- Evaluate trade-offs for each option
+- Identify risks and migration costs
+- Rank options by fit with project requirements
+
+### Milestone 4: Prototype
+- Implement minimal working prototype of top candidate
+- Exercise the key use cases and edge cases
+- Measure performance against criteria
+- Document integration complexity and gotchas
+
+### Milestone 5: Evaluate
+- Compare prototype results with evaluation criteria
+- Identify gaps between prototype and production needs
+- Assess total cost of adoption (learning, migration, maintenance)
+- Make go/no-go recommendation with supporting evidence
+
+### Milestone 6: Document
+- Write research summary with methodology
+- Document recommendation with trade-offs and alternatives
+- Include code samples and integration guide
+- Archive research materials for future reference
