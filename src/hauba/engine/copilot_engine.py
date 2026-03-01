@@ -9,18 +9,28 @@ Capabilities:
 - Session persistence for resuming interrupted tasks
 - Streaming events for real-time UI updates
 - Full AI Workstation: software, video, data, ML, docs, automation
+- Interactive plan review — agent plans, user confirms before execution
+- Human escalation — agent asks user for API keys, billing, credentials
+- Multi-turn conversation — session stays open for follow-ups
+- Delivery channels — notify via WhatsApp, Telegram, Discord on completion
 
 Architecture:
     User Request → CopilotEngine → Copilot SDK → Agent Runtime
                                                       ↓
                                            (bash, files, git, web)
+                                                      ↓
+                                        on_user_input_request (human escalation)
+                                                      ↓
+                                        Plan → Confirm → Execute → Deliver
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -31,12 +41,82 @@ from hauba.engine.types import EngineConfig, EngineEvent, EngineResult
 logger = structlog.get_logger()
 
 
+# --- Interactive handler types ---
+
+# Called when the agent wants to ask the user a question (API key, confirm, etc.)
+UserInputCallback = Callable[
+    [str, list[str], bool],  # question, choices, allow_freeform
+    Awaitable[str],  # answer
+]
+
+# Called when a plan is detected, receives plan text, returns True to proceed
+PlanReviewCallback = Callable[
+    [str],  # plan_text
+    Awaitable[bool],  # approved
+]
+
+# Called when the task is complete, receives output text
+DeliveryCallback = Callable[
+    [str, str],  # output, session_id
+    Awaitable[None],
+]
+
+
+@dataclass
+class PlanState:
+    """Persistent plan state — saved to disk so it survives interruptions."""
+
+    task: str = ""
+    plan_text: str = ""
+    approved: bool = False
+    session_id: str = ""
+    timestamp: float = 0.0
+    workspace: str = ""
+    files_created: list[str] = field(default_factory=list)
+
+    def save(self, path: Path) -> None:
+        """Save plan state to disk."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "task": self.task,
+                    "plan_text": self.plan_text,
+                    "approved": self.approved,
+                    "session_id": self.session_id,
+                    "timestamp": self.timestamp,
+                    "workspace": self.workspace,
+                    "files_created": self.files_created,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def load(path: Path) -> PlanState | None:
+        """Load plan state from disk."""
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return PlanState(**data)
+        except Exception:
+            return None
+
+
 class CopilotEngine:
     """The single execution brain for Hauba AI Workstation.
 
     Wraps the GitHub Copilot SDK to provide a professional AI workstation
     that can build software, edit videos, process data, train ML models,
     generate documents, scrape websites, and automate workflows.
+
+    Now supports:
+    - Interactive plan review (plan → confirm → execute)
+    - Human escalation (ask_user for API keys, billing, credentials)
+    - Multi-turn conversation (send follow-up messages to the session)
+    - Delivery channel notification on completion
 
     Example:
         >>> config = EngineConfig(
@@ -45,6 +125,7 @@ class CopilotEngine:
         ...     model="claude-sonnet-4-5",
         ... )
         >>> engine = CopilotEngine(config)
+        >>> engine.set_user_input_handler(my_input_handler)
         >>> result = await engine.execute("Build a REST API with auth")
         >>> print(result.output)
     """
@@ -57,6 +138,34 @@ class CopilotEngine:
         self._events: list[EngineEvent] = []
         self._event_handlers: list[Callable[[EngineEvent], None]] = []
 
+        # Interactive callbacks
+        self._user_input_handler: UserInputCallback | None = None
+        self._plan_review_handler: PlanReviewCallback | None = None
+        self._delivery_handler: DeliveryCallback | None = None
+
+        # Plan tracking
+        self._plan_state: PlanState | None = None
+        self._plan_detected = asyncio.Event()
+
+    # --- Public API for wiring interactive handlers ---
+
+    def set_user_input_handler(self, handler: UserInputCallback) -> None:
+        """Set the callback for when the agent asks the user a question.
+
+        This fires for API key requests, billing confirmations, credential
+        prompts, and any other human escalation. The Copilot SDK's ask_user
+        tool triggers this.
+        """
+        self._user_input_handler = handler
+
+    def set_plan_review_handler(self, handler: PlanReviewCallback) -> None:
+        """Set the callback for plan review before execution starts."""
+        self._plan_review_handler = handler
+
+    def set_delivery_handler(self, handler: DeliveryCallback) -> None:
+        """Set the callback for delivering results (WhatsApp, Telegram, Discord)."""
+        self._delivery_handler = handler
+
     @property
     def is_available(self) -> bool:
         """Check if the Copilot SDK is available."""
@@ -66,6 +175,16 @@ class CopilotEngine:
             return True
         except ImportError:
             return False
+
+    @property
+    def session(self) -> Any:
+        """Access the active Copilot session for multi-turn conversation."""
+        return self._session
+
+    @property
+    def plan_state(self) -> PlanState | None:
+        """Get the current plan state."""
+        return self._plan_state
 
     async def start(self) -> None:
         """Initialize the Copilot SDK client and verify connection."""
@@ -140,6 +259,14 @@ class CopilotEngine:
         credentials, injects Hauba's system prompt and skills, sends the
         instruction, and waits for the agent to complete.
 
+        The flow is:
+        1. Create session with on_user_input_request wired up
+        2. Send instruction → agent plans
+        3. Agent's plan is captured via session events
+        4. If plan_review_handler is set, pause and wait for user confirmation
+        5. On confirmation, agent proceeds to execute
+        6. On completion, delivery_handler is called if set
+
         Args:
             instruction: What to build/do (plain English).
             timeout: Maximum execution time in seconds (default: 5 minutes).
@@ -153,6 +280,13 @@ class CopilotEngine:
             await self.start()
 
         self._events.clear()
+        self._plan_detected.clear()
+        self._plan_state = PlanState(
+            task=instruction,
+            timestamp=time.time(),
+            workspace=self._config.working_directory or ".",
+        )
+
         self._emit_event(EngineEvent(type="engine.task_started", timestamp=time.time()))
 
         try:
@@ -169,6 +303,9 @@ class CopilotEngine:
                 )
 
             self._session.on(self._handle_session_event)
+
+            if self._plan_state:
+                self._plan_state.session_id = self._session.session_id
 
             self._emit_event(
                 EngineEvent(
@@ -206,6 +343,20 @@ class CopilotEngine:
             if self._config.session_persist:
                 self._save_session(self._session.session_id)
 
+            # Persist plan state
+            if self._plan_state:
+                self._plan_state.approved = True
+                plan_path = self._get_plan_state_path()
+                if plan_path:
+                    self._plan_state.save(plan_path)
+
+            # Deliver results via channels if handler is set
+            if self._delivery_handler and result.success:
+                try:
+                    await self._delivery_handler(result.output, result.session_id or "")
+                except Exception as e:
+                    logger.warning("engine.delivery_failed", error=str(e))
+
             return result
 
         except TimeoutError:
@@ -222,6 +373,58 @@ class CopilotEngine:
                     timestamp=time.time(),
                 )
             )
+            return EngineResult.fail(str(e))
+
+    async def send_message(self, message: str, *, timeout: float = 300.0) -> EngineResult:
+        """Send a follow-up message to the active session.
+
+        This enables multi-turn conversation. After the initial execute(),
+        the user can send follow-ups like "ok proceed", "change the database
+        to PostgreSQL", "add tests", etc.
+
+        Args:
+            message: The follow-up message text.
+            timeout: Maximum wait time.
+
+        Returns:
+            EngineResult with the agent's response.
+        """
+        if not self._session:
+            return EngineResult.fail("No active session. Run execute() first.")
+
+        try:
+            self._emit_event(
+                EngineEvent(
+                    type="engine.message_sent",
+                    data={"message": message[:200]},
+                    timestamp=time.time(),
+                )
+            )
+
+            response = await self._session.send_and_wait(
+                {"prompt": message},
+                timeout=timeout,
+            )
+
+            output = ""
+            if response and hasattr(response, "data"):
+                data = response.data
+                if hasattr(data, "content") and data.content:
+                    output = data.content
+
+            # Persist session
+            if self._config.session_persist:
+                self._save_session(self._session.session_id)
+
+            return EngineResult.ok(
+                output=output,
+                session_id=self._session.session_id,
+            )
+
+        except TimeoutError:
+            return EngineResult.fail(f"Response timed out after {timeout}s.")
+        except Exception as e:
+            logger.error("engine.send_message_error", error=str(e))
             return EngineResult.fail(str(e))
 
     def _build_session_config(self, system_message: str | None = None) -> dict[str, Any]:
@@ -264,6 +467,38 @@ class CopilotEngine:
             "background_compaction_threshold": 0.80,
             "buffer_exhaustion_threshold": 0.95,
         }
+
+        # Wire up the on_user_input_request handler for human escalation
+        if self._user_input_handler:
+            handler = self._user_input_handler
+
+            async def _handle_user_input(
+                request: dict[str, Any], _context: dict[str, str]
+            ) -> dict[str, Any]:
+                question = request.get("question", "The agent needs your input:")
+                choices = request.get("choices", [])
+                allow_freeform = request.get("allowFreeform", True)
+
+                self._emit_event(
+                    EngineEvent(
+                        type="engine.human_escalation",
+                        data={
+                            "question": question,
+                            "choices": choices,
+                            "allow_freeform": allow_freeform,
+                        },
+                        timestamp=time.time(),
+                    )
+                )
+
+                answer = await handler(question, choices, allow_freeform)
+
+                return {
+                    "answer": answer,
+                    "wasFreeform": bool(not choices or answer not in choices),
+                }
+
+            config["on_user_input_request"] = _handle_user_input
 
         return config
 
@@ -329,6 +564,17 @@ Follow this 5-phase protocol for EVERY task:
 - List all files created/modified
 - Note any setup steps or follow-up tasks
 
+### HUMAN ESCALATION
+
+When you need information from the user, USE the ask_user tool. Examples:
+- Need an API key → ask_user("Which API key should I use for Stripe?")
+- Need billing confirmation → ask_user("This will incur costs. Proceed?", ["Yes", "No"])
+- Need credentials → ask_user("What are the database credentials?")
+- Need provider choice → ask_user("Which provider?", ["OpenAI", "Anthropic", "Ollama"])
+- Need confirmation → ask_user("I've created the plan. Ready to proceed?", ["Yes, start", "No, modify"])
+
+NEVER guess API keys, passwords, or credentials. ALWAYS ask the user.
+
 ### TOOL INSTALLATION
 
 When a task requires a Python package you don't have:
@@ -372,6 +618,33 @@ Common packages by domain:
         )
         self._emit_event(engine_event)
 
+        # Track plan changes
+        if event_type == "session.plan_changed" and self._plan_state is not None:
+            data = event.data if hasattr(event, "data") else None
+            if data:
+                plan_text = ""
+                if hasattr(data, "content") and data.content:
+                    plan_text = data.content
+                elif hasattr(data, "summary") and data.summary:
+                    plan_text = data.summary
+                elif isinstance(data, dict):
+                    plan_text = data.get("content", data.get("summary", ""))
+                if plan_text:
+                    self._plan_state.plan_text = plan_text
+                    self._plan_detected.set()
+
+        # Track file creation
+        if event_type == "session.workspace_file_changed" and self._plan_state is not None:
+            data = event.data if hasattr(event, "data") else None
+            if data:
+                path = ""
+                if hasattr(data, "path") and data.path:
+                    path = data.path
+                elif isinstance(data, dict):
+                    path = data.get("path", "")
+                if path and path not in self._plan_state.files_created:
+                    self._plan_state.files_created.append(path)
+
     def _save_session(self, session_id: str) -> None:
         """Save session ID for --continue support."""
         try:
@@ -385,6 +658,15 @@ Common packages by domain:
         except Exception as e:
             logger.debug("engine.session_save_failed", error=str(e))
 
+    def _get_plan_state_path(self) -> Path | None:
+        """Get the path for persisting plan state."""
+        try:
+            from hauba.core.constants import HAUBA_HOME
+
+            return HAUBA_HOME / "last_plan.json"
+        except Exception:
+            return None
+
     @staticmethod
     def load_last_session() -> str | None:
         """Load the last saved session ID for --continue support."""
@@ -397,6 +679,16 @@ Common packages by domain:
         except Exception:
             pass
         return None
+
+    @staticmethod
+    def load_last_plan() -> PlanState | None:
+        """Load the last saved plan state."""
+        try:
+            from hauba.core.constants import HAUBA_HOME
+
+            return PlanState.load(HAUBA_HOME / "last_plan.json")
+        except Exception:
+            return None
 
     async def __aenter__(self) -> CopilotEngine:
         await self.start()

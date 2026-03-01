@@ -1,6 +1,22 @@
 """Hauba CLI — AI Workstation entry point.
 
 All execution flows through CopilotEngine (GitHub Copilot SDK).
+
+Interactive flow:
+1. User runs: hauba run "build me a SaaS dashboard"
+2. Engine plans the task, showing real-time thinking/tool activity
+3. User sees the plan and confirms ("ok", "proceed", "start")
+4. Engine executes, asking the user for input when needed (API keys, etc.)
+5. On completion, user chooses delivery channel (WhatsApp, Telegram, Discord)
+6. Multi-turn conversation stays open for follow-ups
+
+UI Design:
+- Claude Code style interactive terminal
+- Live spinners for thinking/planning/executing phases
+- File tracking panel showing which files are being worked on
+- Tool invocation display with command details
+- Arrow-key driven menus for selections
+- Beautiful Rich panels with status indicators
 """
 
 from __future__ import annotations
@@ -32,8 +48,8 @@ if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     if hasattr(sys.stdout, "reconfigure"):
         try:
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
         except Exception:
             pass
 
@@ -109,14 +125,14 @@ def init() -> None:
 
         engine = CopilotEngine.__new__(CopilotEngine)
         if hasattr(engine, "is_available") and CopilotEngine.__dict__.get("is_available"):
-            # Check if import works
             try:
                 import copilot  # noqa: F401
 
                 console.print("[green]+[/green] Copilot SDK is installed")
             except ImportError:
                 console.print(
-                    "[yellow]![/yellow] Copilot SDK not found. Install: pip install github-copilot-sdk"
+                    "[yellow]![/yellow] Copilot SDK not found. "
+                    "Install: pip install github-copilot-sdk"
                 )
         else:
             console.print("[green]+[/green] Engine check complete")
@@ -151,13 +167,27 @@ def run(
         "-c",
         help="Resume the last session",
     ),
+    interactive: bool = typer.Option(
+        True,
+        "--interactive/--no-interactive",
+        "-i/-I",
+        help="Enable interactive mode (plan review, delivery, multi-turn)",
+    ),
 ) -> None:
     """Run a task with the Hauba AI Workstation.
 
-    Powered by the Copilot SDK engine (production-tested, BYOK).
+    Interactive mode (default):
+    - Agent plans the task with live progress indicators
+    - You review and confirm before execution
+    - Agent asks you for input when needed (API keys, credentials, etc.)
+    - After completion, choose a delivery channel
+    - Continue the conversation with follow-up messages
+
+    Non-interactive mode (--no-interactive):
+    - Agent runs to completion without pausing
     """
     _check_init()
-    asyncio.run(_run_task(task, workspace, continue_session))
+    asyncio.run(_run_task(task, workspace, continue_session, interactive))
 
 
 def _build_skill_context(task: str) -> str:
@@ -192,11 +222,184 @@ def _build_skill_context(task: str) -> str:
     return "\n".join(parts)
 
 
-async def _run_task(task: str, workspace_path: str = "", continue_session: bool = False) -> None:
-    """Execute a task using the CopilotEngine."""
+# --- Interactive handlers for Rich CLI ---
+
+
+async def _cli_user_input_handler(
+    question: str,
+    choices: list[str],
+    allow_freeform: bool,
+) -> str:
+    """Handle agent's ask_user requests via Rich terminal prompts.
+
+    This is called when the agent needs human input — API keys, billing
+    confirmation, credential prompts, provider choices, etc.
+    """
+    from hauba.ui.interactive import InteractiveUI, select_menu
+
+    ui = InteractiveUI(console)
+    ui.show_human_escalation(question)
+
+    if choices and not allow_freeform:
+        idx = select_menu(console, "Choose:", choices)
+        if idx >= 0:
+            return choices[idx]
+        return choices[0] if choices else ""
+    elif choices:
+        idx = select_menu(console, "Choose (or type your own):", [*choices, "(type your own)"])
+        if idx >= 0 and idx < len(choices):
+            return choices[idx]
+        return Prompt.ask("  [bold]Your answer[/bold]")
+    else:
+        # Freeform input — detect secrets
+        is_secret = any(
+            kw in question.lower()
+            for kw in ["api key", "password", "secret", "token", "credential", "auth"]
+        )
+        return Prompt.ask("  [bold]Your answer[/bold]", password=is_secret)
+
+
+async def _cli_delivery_handler(output: str, session_id: str) -> None:
+    """Ask user which channel to deliver results to after task completion."""
+    from hauba.ui.interactive import confirm_prompt, show_delivery_menu
+
+    deliver = confirm_prompt(
+        console,
+        "Deliver results via a channel? (WhatsApp/Telegram/Discord)",
+        default=False,
+    )
+
+    if not deliver:
+        return
+
+    channel = show_delivery_menu(console)
+
+    if not channel:
+        return
+
+    # Prepare a summary for delivery
+    summary = output[:1500] if output else "Task completed successfully."
+
+    if channel == "whatsapp":
+        await _deliver_whatsapp(summary)
+    elif channel == "telegram":
+        await _deliver_telegram(summary)
+    elif channel == "discord":
+        await _deliver_discord(summary)
+
+
+async def _deliver_whatsapp(summary: str) -> None:
+    """Deliver results via WhatsApp."""
+    console.print("  [dim]WhatsApp delivery requires Twilio credentials.[/dim]")
+
+    from hauba.core.config import ConfigManager
+
+    config = ConfigManager()
+    sid = config.get("whatsapp.account_sid") or ""
+    token = config.get("whatsapp.auth_token") or ""
+    from_num = config.get("whatsapp.from_number") or ""
+
+    if not sid or not token or not from_num:
+        console.print(
+            "[yellow]WhatsApp not configured.[/yellow]\n"
+            "  Run: hauba config whatsapp.account_sid <YOUR_SID>\n"
+            "       hauba config whatsapp.auth_token <YOUR_TOKEN>\n"
+            "       hauba config whatsapp.from_number whatsapp:+14155238886"
+        )
+        return
+
+    to_number = Prompt.ask("  [bold]Recipient WhatsApp number[/bold] (e.g., +1234567890)")
+
+    try:
+        from hauba.channels.whatsapp import WhatsAppChannel
+        from hauba.core.events import EventEmitter
+
+        events = EventEmitter()
+        wa = WhatsAppChannel(
+            account_sid=sid,
+            auth_token=token,
+            from_number=from_num,
+            events=events,
+        )
+        await wa.start()
+        await wa.send_message(to_number, f"Hauba Task Complete:\n\n{summary}")
+        await wa.stop()
+        console.print("  [green]+[/green] Delivered via WhatsApp")
+    except Exception as exc:
+        console.print(f"  [red]WhatsApp delivery failed: {exc}[/red]")
+
+
+async def _deliver_telegram(summary: str) -> None:
+    """Deliver results via Telegram."""
+    from hauba.core.config import ConfigManager
+
+    config = ConfigManager()
+    token = config.get("telegram.bot_token") or ""
+
+    if not token:
+        console.print(
+            "[yellow]Telegram not configured.[/yellow]\n"
+            "  Run: hauba config telegram.bot_token <YOUR_BOT_TOKEN>"
+        )
+        return
+
+    chat_id = Prompt.ask("  [bold]Telegram chat ID[/bold]")
+
+    try:
+        from hauba.channels.telegram import TelegramChannel
+        from hauba.core.events import EventEmitter
+
+        events = EventEmitter()
+        tg = TelegramChannel(token=token, events=events)
+        await tg.start()
+        await tg.send_message(int(chat_id), f"Hauba Task Complete:\n\n{summary}")
+        await tg.stop()
+        console.print("  [green]+[/green] Delivered via Telegram")
+    except Exception as exc:
+        console.print(f"  [red]Telegram delivery failed: {exc}[/red]")
+
+
+async def _deliver_discord(summary: str) -> None:
+    """Deliver results via Discord."""
+    from hauba.core.config import ConfigManager
+
+    config = ConfigManager()
+    token = config.get("discord.bot_token") or ""
+
+    if not token:
+        console.print(
+            "[yellow]Discord not configured.[/yellow]\n"
+            "  Run: hauba config discord.bot_token <YOUR_BOT_TOKEN>"
+        )
+        return
+
+    channel_id = Prompt.ask("  [bold]Discord channel ID[/bold]")
+
+    try:
+        from hauba.channels.discord import DiscordChannel
+        from hauba.core.events import EventEmitter
+
+        events = EventEmitter()
+        dc = DiscordChannel(token=token, events=events)
+        await dc.start()
+        await dc.send_message(int(channel_id), f"Hauba Task Complete:\n\n{summary}")
+        await dc.stop()
+        console.print("  [green]+[/green] Delivered via Discord")
+    except Exception as exc:
+        console.print(f"  [red]Discord delivery failed: {exc}[/red]")
+
+
+async def _run_task(
+    task: str,
+    workspace_path: str = "",
+    continue_session: bool = False,
+    interactive: bool = True,
+) -> None:
+    """Execute a task using the CopilotEngine with full interactive UI."""
     from hauba.core.config import ConfigManager
     from hauba.engine.copilot_engine import CopilotEngine
     from hauba.engine.types import EngineConfig, ProviderType
+    from hauba.ui.interactive import InteractiveUI
 
     config = ConfigManager()
 
@@ -241,102 +444,231 @@ async def _run_task(task: str, workspace_path: str = "", continue_session: bool 
         )
         raise typer.Exit(1)
 
-    # Show streaming events with rich formatting
+    # Wire up interactive handlers
+    if interactive:
+        engine.set_user_input_handler(_cli_user_input_handler)
+        engine.set_delivery_handler(_cli_delivery_handler)
+
+    # Create the interactive UI
+    ui = InteractiveUI(console)
+
+    # Extract skill names for header
+    skill_names: list[str] = []
+    if skill_context:
+        skill_lines = [ln for ln in skill_context.split("\n") if ln.startswith("### ")]
+        skill_names = [ln.replace("### ", "").split(" (")[0] for ln in skill_lines[:3]]
+
+    ui.show_header(
+        task=task,
+        provider=config.settings.llm.provider,
+        model=config.settings.llm.model,
+        workspace=str(ws_path),
+        skills=skill_names,
+        interactive=interactive,
+    )
+
+    ui.show_thinking()
+
+    # Wire up engine events to the interactive UI
     def on_event(event: object) -> None:
         etype = getattr(event, "type", "")
         data = getattr(event, "data", None)
 
         if etype == "assistant.message_delta":
+            delta = ""
             if isinstance(data, dict) and data.get("delta_content"):
-                console.print(data["delta_content"], end="")
+                delta = data["delta_content"]
             elif data is not None and hasattr(data, "delta_content"):
-                delta = data.delta_content  # type: ignore[union-attr]
-                if delta:
-                    console.print(delta, end="")
+                delta = data.delta_content or ""  # type: ignore[union-attr]
+            if delta:
+                ui.show_streaming_delta(delta)
+
+        elif etype == "assistant.reasoning_delta":
+            # Show thinking/reasoning text
+            delta = ""
+            if isinstance(data, dict):
+                delta = data.get("delta_content", "")
+            elif data is not None and hasattr(data, "delta_content"):
+                delta = data.delta_content or ""  # type: ignore[union-attr]
+            if delta:
+                console.print(f"[dim italic]{delta}[/dim italic]", end="")
+
         elif etype == "tool.execution_start":
             tool_name = ""
-            tool_input = ""
+            tool_detail = ""
             if isinstance(data, dict):
-                tool_name = data.get("name", str(data))
-                tool_input = str(data.get("input", ""))[:120]
-            else:
-                tool_name = str(data) if data else ""
+                tool_name = data.get("tool_name", data.get("name", str(data)))
+                args = data.get("arguments", data.get("input", ""))
+                if isinstance(args, dict):
+                    tool_detail = str(args.get("command", args.get("file_path", "")))[:120]
+                else:
+                    tool_detail = str(args)[:120]
+            elif data is not None:
+                tool_name = getattr(data, "tool_name", "") or getattr(data, "name", "")
+                tool_detail = str(getattr(data, "arguments", ""))[:120]
             if tool_name:
-                console.print(
-                    f"\n  [bold yellow]> {tool_name}[/bold yellow] [dim]{tool_input}[/dim]"
-                )
+                ui.show_tool_start(tool_name, tool_detail)
+
         elif etype == "tool.execution_complete":
-            if isinstance(data, dict) and data.get("output"):
-                output = str(data["output"])[:200]
-                for line in output.split("\n")[:3]:
-                    if line.strip():
-                        console.print(f"  [dim]  {line}[/dim]")
+            output = ""
+            success = True
+            if isinstance(data, dict):
+                result = data.get("result", {})
+                if isinstance(result, dict):
+                    output = str(result.get("output", ""))[:200]
+                    success = not result.get("is_error", False)
+                else:
+                    output = str(data.get("output", ""))[:200]
+            elif data is not None:
+                result = getattr(data, "result", None)
+                if result:
+                    output = str(getattr(result, "output", ""))[:200]
+            ui.show_tool_result(output, success)
+
+        elif etype == "session.plan_changed":
+            ui.show_plan_updated()
+
+        elif etype == "session.workspace_file_changed":
+            path = ""
+            action = "edit"
+            if isinstance(data, dict):
+                path = data.get("path", "")
+                action = data.get("operation", "edit")
+            elif data is not None:
+                path = getattr(data, "path", "")
+                op = getattr(data, "operation", None)
+                action = str(op.value if hasattr(op, "value") else op) if op else "edit"
+            if path:
+                ui.show_file_activity(path, action)
+
+        elif etype == "engine.human_escalation":
+            # The actual prompt is handled by _cli_user_input_handler
+            pass
+
+        elif etype == "subagent.started":
+            agent_name = ""
+            if isinstance(data, dict):
+                agent_name = data.get("agent_name", data.get("agent_display_name", ""))
+            elif data is not None:
+                agent_name = getattr(data, "agent_name", "") or getattr(
+                    data, "agent_display_name", ""
+                )
+            if agent_name:
+                console.print(f"\n  [bold magenta]>> Subagent: {agent_name}[/bold magenta]")
+
+        elif etype == "subagent.completed":
+            console.print("  [bold magenta]<< Subagent done[/bold magenta]")
 
     engine.on_event(on_event)
-
-    skill_info = ""
-    if skill_context:
-        skill_lines = [ln for ln in skill_context.split("\n") if ln.startswith("### ")]
-        if skill_lines:
-            names = [ln.replace("### ", "").split(" (")[0] for ln in skill_lines[:3]]
-            skill_info = f"\n  Skills: {', '.join(names)}"
-
-    console.print(
-        Panel(
-            f"[bold cyan]Hauba AI Workstation[/bold cyan] (Copilot SDK)\n"
-            f"  Provider: {config.settings.llm.provider} | Model: {config.settings.llm.model}\n"
-            f"  Workspace: {ws_path}{skill_info}",
-            border_style="cyan",
-        )
-    )
 
     # Check for --continue session resumption
     session_id = None
     if continue_session:
         session_id = CopilotEngine.load_last_session()
         if session_id:
-            console.print(f"[dim]Resuming session: {session_id[:12]}...[/dim]")
+            console.print(f"  [dim]Resuming session: {session_id[:12]}...[/dim]")
         else:
-            console.print("[dim]No previous session found, starting fresh.[/dim]")
+            console.print("  [dim]No previous session found, starting fresh.[/dim]")
 
     try:
         result = await engine.execute(task, timeout=600.0, session_id=session_id)
         console.print()
+
         if result.success:
-            console.print(
-                Panel(
-                    f"[bold green]Task completed[/bold green]\n\n{result.output[:2000]}",
-                    border_style="green",
-                )
-            )
+            ui.show_completion(result.output, ui.state.tool_count)
         else:
-            console.print(
-                Panel(
-                    f"[bold red]Task failed[/bold red]\n\n{result.error}",
-                    border_style="red",
-                )
-            )
-        console.print(f"[dim]  Workspace: {ws_path}[/dim]")
+            ui.show_failure(result.error or "Unknown error")
+
+        ui.show_workspace(str(ws_path))
+
+        # Multi-turn conversation loop (interactive mode only)
+        if interactive and result.success and engine.session:
+            ui.show_session_active()
+            await _conversation_loop(engine, ui)
+
     finally:
         await engine.stop()
 
 
+async def _conversation_loop(
+    engine: object,
+    ui: object,
+) -> None:
+    """Multi-turn conversation loop after task completion.
+
+    The user can send follow-up messages to the same session:
+    - "add tests for the API"
+    - "change the database to PostgreSQL"
+    - "deploy this to Railway"
+    - "exit" or Ctrl+C to end
+    """
+    from hauba.engine.copilot_engine import CopilotEngine
+
+    if not isinstance(engine, CopilotEngine):
+        return
+
+    while True:
+        try:
+            console.print()
+            message = Prompt.ask("[bold cyan]You[/bold cyan]")
+
+            if not message.strip():
+                continue
+
+            lower = message.strip().lower()
+            if lower in ("exit", "quit", "bye", "done", "q"):
+                console.print("  [dim]Session ended.[/dim]")
+                break
+
+            result = await engine.send_message(message, timeout=600.0)
+
+            console.print()
+            if result.success:
+                console.print(
+                    Panel(
+                        result.output[:2000] if result.output else "[dim]No output[/dim]",
+                        border_style="green",
+                    )
+                )
+            else:
+                console.print(f"  [red]{result.error}[/red]")
+
+        except KeyboardInterrupt:
+            console.print("\n  [dim]Session ended.[/dim]")
+            break
+        except EOFError:
+            break
+
+
 @app.command()
 def status() -> None:
-    """Show status of Hauba configuration."""
+    """Show status of Hauba configuration and last task."""
     _check_init()
+    from rich.table import Table
+
     from hauba.core.config import ConfigManager
+    from hauba.engine.copilot_engine import CopilotEngine
 
     config = ConfigManager()
-    console.print(
-        Panel(
-            f"[bold]Owner:[/bold] {config.settings.owner_name}\n"
-            f"[bold]Provider:[/bold] {config.settings.llm.provider}\n"
-            f"[bold]Model:[/bold] {config.settings.llm.model}",
-            title="Hauba Status",
-            border_style="blue",
-        )
-    )
+    plan = CopilotEngine.load_last_plan()
+
+    # Status table
+    table = Table(border_style="blue", show_header=False, padding=(0, 2))
+    table.add_column("Key", style="bold")
+    table.add_column("Value")
+
+    table.add_row("Owner", config.settings.owner_name)
+    table.add_row("Provider", config.settings.llm.provider)
+    table.add_row("Model", config.settings.llm.model)
+
+    if plan and plan.task:
+        table.add_row("", "")
+        table.add_row("Last Task", plan.task[:80])
+        table.add_row("Approved", "[green]Yes[/green]" if plan.approved else "[yellow]No[/yellow]")
+        if plan.files_created:
+            table.add_row("Files Created", str(len(plan.files_created)))
+
+    console.print(Panel(table, title="[bold blue]Hauba Status[/bold blue]", border_style="blue"))
 
 
 @app.command()
@@ -366,13 +698,13 @@ def config_cmd(
     cfg = ConfigManager()
     if value:
         cfg.set(key, value)
-        console.print(f"[green]+ Set {key} = {value}[/green]")
+        console.print(f"  [green]+[/green] Set [bold]{key}[/bold] = {value}")
     else:
         val = cfg.get(key)
         if val is not None:
-            console.print(f"[bold]{key}:[/bold] {val}")
+            console.print(f"  [bold]{key}:[/bold] {val}")
         else:
-            console.print(f"[red]Unknown key: {key}[/red]")
+            console.print(f"  [red]Unknown key: {key}[/red]")
 
 
 @app.command()
@@ -451,6 +783,7 @@ async def _voice_loop() -> None:
                 model=config.settings.llm.model,
             )
             engine = CopilotEngine(engine_config)
+            engine.set_user_input_handler(_cli_user_input_handler)
             result = await engine.execute(text)
             await engine.stop()
 

@@ -20,6 +20,7 @@ class ChannelType(str, Enum):
 
     TELEGRAM = "telegram"
     DISCORD = "discord"
+    WHATSAPP = "whatsapp"
     WEB = "web"
     VOICE = "voice"
     CLI = "cli"
