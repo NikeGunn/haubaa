@@ -113,7 +113,7 @@ class HaubaDaemon:
         self._http = httpx.AsyncClient(
             base_url=self._server_url,
             timeout=30.0,
-            headers={"User-Agent": "hauba-agent/0.4.0"},
+            headers={"User-Agent": "hauba-agent/0.5.0"},
         )
 
         logger.info(
