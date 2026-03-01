@@ -3,16 +3,21 @@
 # Usage: curl -fsSL https://hauba.tech/install.sh | sh
 set -eu
 
+# ── Colors & helpers ──────────────────────────────────────────────────────
 BOLD='\033[1m'
+DIM='\033[2m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 RED='\033[0;31m'
 CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+WHITE='\033[1;37m'
 NC='\033[0m'
 
-info()  { printf "${GREEN}[hauba]${NC} %s\n" "$1"; }
-warn()  { printf "${YELLOW}[hauba]${NC} %s\n" "$1"; }
-err()   { printf "${RED}[hauba]${NC} %s\n" "$1" >&2; }
+info()  { printf "${GREEN}  [+]${NC} %s\n" "$1"; }
+warn()  { printf "${YELLOW}  [!]${NC} %s\n" "$1"; }
+err()   { printf "${RED}  [x]${NC} %s\n" "$1" >&2; }
+step()  { printf "${CYAN}  [*]${NC} ${BOLD}%s${NC}\n" "$1"; }
 
 PYTHON=""
 
@@ -34,38 +39,64 @@ check_python() {
 
 main() {
     printf "\n"
-    printf "${CYAN}  _   _                 _           ${NC}\n"
-    printf "${CYAN} | | | |  __ _  _   _  | |__    __ _ ${NC}\n"
-    printf "${CYAN} | |_| | / _\` || | | | | '_ \\\\  / _\` |${NC}\n"
-    printf "${CYAN} |  _  || (_| || |_| | | |_) || (_| |${NC}\n"
-    printf "${CYAN} |_| |_| \\\\__,_| \\\\__,_| |_.__/  \\\\__,_|${NC}\n"
+    printf "${MAGENTA}  ██╗  ██╗ █████╗ ██╗   ██╗██████╗  █████╗ ${NC}\n"
+    printf "${MAGENTA}  ██║  ██║██╔══██╗██║   ██║██╔══██╗██╔══██╗${NC}\n"
+    printf "${CYAN}  ███████║███████║██║   ██║██████╔╝███████║${NC}\n"
+    printf "${CYAN}  ██╔══██║██╔══██║██║   ██║██╔══██╗██╔══██║${NC}\n"
+    printf "${WHITE}  ██║  ██║██║  ██║╚██████╔╝██████╔╝██║  ██║${NC}\n"
+    printf "${WHITE}  ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝${NC}\n"
     printf "\n"
-    printf "${BOLD}  AI Workstation${NC}\n"
-    printf "  ${CYAN}https://hauba.tech${NC}\n"
+    printf "${BOLD}  Your AI Engineering Team${NC}\n"
+    printf "${DIM}  One command. Ship products. Not prompts.${NC}\n"
+    printf "${CYAN}  https://hauba.tech${NC}\n"
+    printf "\n"
+    printf "${DIM}  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     printf "\n"
 
+    # Step 1: Check Python
+    step "Checking Python version..."
     check_python
     py_ver=$($PYTHON --version 2>&1)
     info "Found $PYTHON ($py_ver)"
 
-    info "Installing hauba from PyPI..."
+    # Step 2: Install from PyPI
+    printf "\n"
+    step "Installing Hauba from PyPI..."
     $PYTHON -m pip install --upgrade hauba 2>&1 | tail -1
+    info "Package installed"
+
+    # Step 3: Verify
+    printf "\n"
+    step "Verifying installation..."
 
     if command -v hauba > /dev/null 2>&1; then
-        # Verify Copilot SDK
+        info "hauba CLI found in PATH"
+
         if $PYTHON -c "import copilot; print('OK')" > /dev/null 2>&1; then
-            info "Copilot SDK: OK"
+            info "Copilot SDK: ready"
         else
-            warn "Copilot SDK check inconclusive (will work on first run)"
+            warn "Copilot SDK not found (installs automatically on first run)"
         fi
 
         printf "\n"
-        info "Installation complete!"
+        printf "${DIM}  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
         printf "\n"
-        printf "${BOLD}Get started:${NC}\n"
-        printf "  ${GREEN}hauba init${NC}          # Set up your API key\n"
-        printf "  ${GREEN}hauba run \"task\"${NC}     # Run your first task\n"
-        printf "  ${GREEN}hauba doctor${NC}        # Check system health\n"
+        printf "${GREEN}${BOLD}  Installation complete!${NC}\n"
+        printf "\n"
+        printf "${BOLD}  Get started in 30 seconds:${NC}\n"
+        printf "\n"
+        printf "  ${GREEN}1.${NC} ${BOLD}hauba init${NC}              ${DIM}# Set up your API key${NC}\n"
+        printf "  ${GREEN}2.${NC} ${BOLD}hauba run \"build me a dashboard\"${NC}\n"
+        printf "                               ${DIM}# Ship your first product${NC}\n"
+        printf "  ${GREEN}3.${NC} ${BOLD}hauba setup whatsapp${NC}   ${DIM}# Get results on WhatsApp${NC}\n"
+        printf "\n"
+        printf "${DIM}  Other commands:${NC}\n"
+        printf "    ${CYAN}hauba status${NC}           ${DIM}# Check configuration${NC}\n"
+        printf "    ${CYAN}hauba doctor${NC}           ${DIM}# Diagnose issues${NC}\n"
+        printf "    ${CYAN}hauba serve${NC}            ${DIM}# Web dashboard${NC}\n"
+        printf "    ${CYAN}hauba voice${NC}            ${DIM}# Talk to your AI team${NC}\n"
+        printf "\n"
+        printf "${DIM}  Join the community: ${CYAN}github.com/NikeGunn/haubaa${NC}\n"
         printf "\n"
     else
         warn "Installed but 'hauba' not found in PATH."

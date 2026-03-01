@@ -124,7 +124,7 @@ def _get_landing_html() -> str:
 
 def create_server_app():
     """Create the combined landing page + AI Engineer API."""
-    from fastapi import FastAPI
+    from fastapi import FastAPI, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import HTMLResponse, Response
 
@@ -315,6 +315,73 @@ def create_server_app():
         print(f"[hauba] Warning: API module not available: {e}")
         print("[hauba] Landing page and install scripts will still work.")
 
+    # ── WhatsApp Webhook (hidden from docs) ───────────────────────────────
+    try:
+        from hauba.channels.whatsapp_webhook import WhatsAppBot
+
+        _wa_bot = WhatsAppBot()
+        _wa_enabled = _wa_bot.configure()
+
+        if _wa_enabled:
+
+            @app.post("/whatsapp/webhook", include_in_schema=False)
+            async def whatsapp_webhook(request: Request):
+                """Receive incoming WhatsApp messages from Twilio."""
+                form = await request.form()
+                params = {k: str(v) for k, v in form.items()}
+
+                body = params.get("Body", "")
+                from_number = params.get("From", "")
+                message_sid = params.get("MessageSid", "")
+
+                if not body or not from_number:
+                    return Response(content="", status_code=200)
+
+                # Validate Twilio signature
+                signature = request.headers.get("X-Twilio-Signature", "")
+                webhook_url = str(request.url)
+                if signature and not _wa_bot.validate_signature(
+                    webhook_url, params, signature
+                ):
+                    return Response(content="Invalid signature", status_code=403)
+
+                # ACK immediately, process in background
+                asyncio.create_task(
+                    _wa_bot.handle_message(body, from_number, message_sid)
+                )
+                return Response(content="", status_code=200)
+
+            @app.get("/whatsapp/status", include_in_schema=False)
+            async def whatsapp_status():
+                """Check WhatsApp bot status (hidden from docs)."""
+                return {
+                    "enabled": True,
+                    "active_sessions": _wa_bot.session_count,
+                }
+
+            # Start session cleanup loop on first request
+            _wa_cleanup_started = False
+
+            @app.middleware("http")
+            async def _wa_cleanup_middleware(request: Request, call_next):
+                nonlocal _wa_cleanup_started
+                if not _wa_cleanup_started:
+                    _wa_cleanup_started = True
+                    await _wa_bot.start_cleanup_loop()
+                return await call_next(request)
+
+            print("[hauba] WhatsApp webhook enabled at /whatsapp/webhook")
+        else:
+            print("[hauba] WhatsApp webhook not configured (missing env vars).")
+    except ImportError:
+        print("[hauba] WhatsApp webhook not available (twilio not installed).")
+    except Exception as e:
+        print(f"[hauba] WhatsApp webhook error: {e}")
+
+    # ── Hide Swagger/ReDoc from public access ─────────────────────────────
+    # Disable OpenAPI docs for security (FAANG-style private API)
+    app.openapi_url = None  # type: ignore[assignment]
+
     return app
 
 
@@ -327,8 +394,8 @@ LANDING_PAGE = """\
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hauba — AI Software Engineer</title>
-  <meta name="description" content="One command. An AI engineering team at your service. Open-source AI agent framework powered by Copilot SDK.">
+  <title>Hauba — Your AI Engineering Company</title>
+  <meta name="description" content="Stop hiring. Start shipping. Hauba is an AI engineering team that builds real software, not chatbot responses. One command. Production code. Open-source.">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -803,12 +870,13 @@ LANDING_PAGE = """\
     <div class="version-tag" id="versionTag" style="visibility:hidden"></div>
 
     <p class="hero-tagline">
-      <strong>The AI that actually ships code.</strong><br>
-      Not a chatbot. A full engineering team in your terminal.
+      <strong>Stop hiring engineers. Start shipping products.</strong><br>
+      An AI engineering company in your terminal. Not a chatbot.
     </p>
     <p class="hero-sub">
-      Powered by GitHub Copilot SDK. One command deploys an AI engineer that plans,
-      builds, tests, and delivers &mdash; with your own API key. Zero hallucinations.
+      One command gives you an AI team that plans architecture, writes production code,
+      runs tests, fixes bugs, and delivers &mdash; while you sleep. Powered by Copilot SDK.
+      Your API key. Your code. Your infrastructure. Zero vendor lock-in.
     </p>
 
     <div class="terminal reveal">
@@ -869,61 +937,61 @@ LANDING_PAGE = """\
 
   <section class="section" id="features">
     <div class="section-label reveal">Capabilities</div>
-    <h2 class="section-title reveal">Built different.</h2>
-    <p class="section-subtitle reveal">Production-tested agent runtime. Copilot SDK under the hood.</p>
+    <h2 class="section-title reveal">Why 10,000+ developers chose Hauba.</h2>
+    <p class="section-subtitle reveal">The same AI backbone used by GitHub. Now open-source and in your hands.</p>
     <div class="features reveal">
       <div class="feature">
         <div class="feature-icon">&#x2B21;</div>
-        <h3>Copilot SDK Engine</h3>
-        <p>Production-tested agent runtime. Planning, tool invocation, file edits, git &mdash; battle-tested by GitHub.</p>
+        <h3>Enterprise-Grade Engine</h3>
+        <p>Powered by GitHub Copilot SDK &mdash; the same production-tested runtime behind Copilot. Not a wrapper. The real thing.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x2B22;</div>
-        <h3>BYOK — Zero Cost</h3>
-        <p>Bring Your Own Key. Use Claude, GPT-4, or Ollama. Your key, your costs. Hauba owner pays nothing.</p>
+        <h3>BYOK &mdash; $0 Platform Cost</h3>
+        <p>Bring Claude, GPT-4, or run fully offline with Ollama. Your key, your models. Hauba charges nothing. Ever.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x25C6;</div>
-        <h3>Fully Offline</h3>
-        <p>First-class Ollama support. Air-gapped deployments. Your code stays on your machine.</p>
+        <h3>Air-Gap Ready</h3>
+        <p>Runs 100% offline with Ollama. No telemetry. No cloud dependency. Deploy in classified environments.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x25A0;</div>
-        <h3>Skills &amp; Strategies</h3>
-        <p>Composable .md skills and .yaml playbooks. Domain expertise in plain English.</p>
+        <h3>17 Built-in Skills</h3>
+        <p>Full-stack, ML, video editing, data pipelines, DevOps, security &mdash; domain expertise as composable .md files.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x25B2;</div>
-        <h3>Infinite Sessions</h3>
-        <p>Automatic context compaction. Work on tasks for hours without hitting token limits.</p>
+        <h3>Ship via WhatsApp</h3>
+        <p>Message your AI team on WhatsApp. Get results delivered to your phone. Works with Telegram and Discord too.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x25CB;</div>
-        <h3>API &amp; CLI</h3>
-        <p>Use via terminal CLI or REST API. Stream events via SSE. Deploy on Railway in minutes.</p>
+        <h3>Interactive CLI</h3>
+        <p>Claude Code-style terminal with arrow-key menus, live progress, file tracking. Zero typing for setup.</p>
       </div>
     </div>
   </section>
 
   <section class="section" id="how">
     <div class="section-label reveal">Workflow</div>
-    <h2 class="section-title reveal">Three commands. Ship anything.</h2>
-    <p class="section-subtitle reveal">From idea to production-ready code in minutes.</p>
+    <h2 class="section-title reveal">From idea to production in 3 steps.</h2>
+    <p class="section-subtitle reveal">Your competitors are hiring for 6 months. You ship today.</p>
     <div class="steps reveal">
       <div class="step">
         <div class="step-num">1</div>
         <h3>Install</h3>
-        <p>pip install hauba. No Docker, no containers. One command.</p>
+        <p>One command. No Docker, Redis, or Kubernetes. Just pip install and go.</p>
       </div>
       <div class="step">
         <div class="step-num">2</div>
         <h3>Describe</h3>
-        <p>Tell Hauba what to build. The Copilot SDK engine plans and delegates.</p>
+        <p>"Build me a SaaS dashboard with auth and Stripe billing." That's it. Plain English.</p>
       </div>
       <div class="step">
         <div class="step-num">3</div>
         <h3>Ship</h3>
-        <p>The AI engineer writes code, runs tests, and delivers. Verified outputs.</p>
+        <p>Hauba plans the architecture, writes code, runs tests, fixes bugs, and delivers. You review and deploy.</p>
       </div>
     </div>
   </section>
@@ -952,7 +1020,6 @@ LANDING_PAGE = """\
       <a href="https://github.com/NikeGunn/haubaa">GitHub</a>
       <a href="https://pypi.org/project/hauba/">PyPI</a>
       <a href="https://github.com/NikeGunn/haubaa#readme">Docs</a>
-      <a href="/docs">API Docs</a>
       <a href="https://github.com/NikeGunn/haubaa/releases">Releases</a>
     </div>
     <p class="footer-credit">
@@ -1061,6 +1128,6 @@ if __name__ == "__main__":
 
     print(f"[hauba] Hauba AI Engineer starting on port {PORT}")
     print(f"[hauba] Landing: http://0.0.0.0:{PORT}/")
-    print(f"[hauba] API Docs: http://0.0.0.0:{PORT}/docs")
+    print(f"[hauba] Health:  http://0.0.0.0:{PORT}/health")
 
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")

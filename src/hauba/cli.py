@@ -103,42 +103,67 @@ console = Console()
 
 @app.command()
 def init() -> None:
-    """Initialize Hauba — creates ~/.hauba/ and runs setup wizard."""
+    """Initialize Hauba — creates ~/.hauba/ and runs interactive setup wizard."""
     from hauba.core.setup import ensure_hauba_dirs
+    from hauba.ui.interactive import select_menu
 
+    console.print()
     console.print(
         Panel(
-            "[bold cyan]Hauba — AI Workstation[/bold cyan]\n"
-            "Build software, edit video, process data, and more.",
-            title="Welcome",
+            "[bold cyan]Hauba — Your AI Engineering Team[/bold cyan]\n\n"
+            "Build software, edit video, process data, train ML models,\n"
+            "generate documents, scrape websites, and automate anything.\n\n"
+            "[dim]One command. Ship products. Not prompts.[/dim]",
+            title="[bold]Welcome[/bold]",
             border_style="cyan",
+            padding=(1, 2),
         )
     )
 
     ensure_hauba_dirs()
-    console.print("[green]+[/green] Created ~/.hauba/ directory structure")
+    console.print("  [green]+[/green] Created ~/.hauba/ directory structure")
 
     from hauba.core.config import ConfigManager
 
     config = ConfigManager()
 
-    name = Prompt.ask("[bold]Your name[/bold]", default="Developer")
+    console.print()
+    name = Prompt.ask("  [bold]Your name[/bold]", default="Developer")
     config.settings.owner_name = name
 
-    provider = Prompt.ask(
-        "[bold]LLM provider[/bold]",
-        choices=["anthropic", "openai", "ollama", "deepseek"],
-        default="anthropic",
-    )
+    # Interactive provider selection with arrow keys
+    providers = ["Anthropic (Claude)", "OpenAI (GPT)", "Ollama (Local)", "DeepSeek"]
+    provider_keys = ["anthropic", "openai", "ollama", "deepseek"]
+    provider_descs = [
+        "Best for coding — Claude Sonnet 4.5",
+        "GPT-4o and latest models",
+        "100% local, no API key needed",
+        "Cost-effective alternative",
+    ]
+    idx = select_menu(console, "Choose your LLM provider:", providers, provider_descs)
+    if idx < 0:
+        idx = 0
+    provider = provider_keys[idx]
     config.settings.llm.provider = provider
 
     if provider == "ollama":
         config.settings.llm.base_url = "http://localhost:11434"
-        model = Prompt.ask("[bold]Ollama model[/bold]", default="llama3.1")
-        config.settings.llm.model = model
+        # Model selection for Ollama
+        ollama_models = ["llama3.1", "codellama", "mixtral", "deepseek-coder"]
+        ollama_descs = [
+            "General purpose, fast",
+            "Specialized for code",
+            "Mixture of experts, capable",
+            "Code generation specialist",
+        ]
+        midx = select_menu(console, "Choose Ollama model:", ollama_models, ollama_descs)
+        if midx < 0:
+            midx = 0
+        config.settings.llm.model = ollama_models[midx]
         config.settings.llm.api_key = "ollama"
     else:
-        api_key = Prompt.ask(f"[bold]{provider} API key[/bold]", password=True)
+        console.print()
+        api_key = Prompt.ask(f"  [bold]{provider} API key[/bold]", password=True)
         api_key = api_key.strip()
         if provider == "openai" and api_key.startswith("sk-"):
             for prefix in ("sk-proj-", "sk-"):
@@ -147,52 +172,65 @@ def init() -> None:
                     if second > 0:
                         api_key = api_key[:second]
                         console.print(
-                            "[yellow]Note: Detected duplicate paste — trimmed to single key.[/yellow]"
+                            "  [yellow]Note: Detected duplicate paste — trimmed to single key.[/yellow]"
                         )
                     break
         config.settings.llm.api_key = api_key
 
+        # Model selection with arrow keys
         if provider == "anthropic":
-            model = Prompt.ask("[bold]Model[/bold]", default="claude-sonnet-4-5-20250929")
+            models = [
+                "claude-sonnet-4-5-20250929",
+                "claude-opus-4-5-20250514",
+                "claude-haiku-4-5-20251001",
+            ]
+            model_descs = [
+                "Best balance of speed + quality",
+                "Most capable, slower",
+                "Fastest, budget-friendly",
+            ]
         elif provider == "openai":
-            model = Prompt.ask("[bold]Model[/bold]", default="gpt-4o")
+            models = ["gpt-4o", "gpt-4o-mini", "o3"]
+            model_descs = ["Best balance", "Fast and cheap", "Advanced reasoning"]
         else:
-            model = Prompt.ask("[bold]Model[/bold]", default="deepseek-chat")
-        config.settings.llm.model = model
+            models = ["deepseek-chat", "deepseek-coder"]
+            model_descs = ["General purpose", "Code specialized"]
+
+        midx = select_menu(console, "Choose model:", models, model_descs)
+        if midx < 0:
+            midx = 0
+        config.settings.llm.model = models[midx]
 
     config.save()
-    console.print("[green]+[/green] Configuration saved to ~/.hauba/settings.json")
+    console.print()
+    console.print("  [green]+[/green] Configuration saved to ~/.hauba/settings.json")
 
     # Test Copilot SDK availability
-    console.print("[dim]Checking Copilot SDK...[/dim]")
+    console.print("  [dim]Checking Copilot SDK...[/dim]")
     try:
-        from hauba.engine.copilot_engine import CopilotEngine
+        import copilot  # noqa: F401
 
-        engine = CopilotEngine.__new__(CopilotEngine)
-        if hasattr(engine, "is_available") and CopilotEngine.__dict__.get("is_available"):
-            try:
-                import copilot  # noqa: F401
-
-                console.print("[green]+[/green] Copilot SDK is installed")
-            except ImportError:
-                console.print(
-                    "[yellow]![/yellow] Copilot SDK not found. "
-                    "Install: pip install github-copilot-sdk"
-                )
-        else:
-            console.print("[green]+[/green] Engine check complete")
+        console.print("  [green]+[/green] Copilot SDK is installed")
+    except ImportError:
+        console.print(
+            "  [yellow]![/yellow] Copilot SDK not found. Install: pip install github-copilot-sdk"
+        )
     except Exception:
-        console.print("[green]+[/green] Configuration saved")
+        console.print("  [green]+[/green] Engine check complete")
 
     console.print()
     console.print(
         Panel(
             f"[bold green]Hauba is ready![/bold green]\n\n"
-            f"  Owner: {name}\n"
+            f"  Owner:    {name}\n"
             f"  Provider: {provider}\n"
-            f"  Model: {config.settings.llm.model}\n\n"
-            f'  Run: [bold]hauba run "build me a hello world app"[/bold]',
+            f"  Model:    {config.settings.llm.model}\n\n"
+            f"[bold]Next steps:[/bold]\n\n"
+            f'  [green]1.[/green] [bold]hauba run "build me a SaaS dashboard"[/bold]\n'
+            f"  [green]2.[/green] [bold]hauba setup whatsapp[/bold]   [dim]# Get results on WhatsApp[/dim]\n"
+            f"  [green]3.[/green] [bold]hauba doctor[/bold]           [dim]# Check system health[/dim]",
             border_style="green",
+            padding=(1, 2),
         )
     )
 

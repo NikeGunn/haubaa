@@ -355,10 +355,12 @@ def select_menu(
     options: list[str],
     descriptions: list[str] | None = None,
 ) -> int:
-    """Display a keyboard-navigable selection menu.
+    """Display a keyboard-navigable selection menu with arrow keys.
 
-    Since Rich doesn't natively support arrow-key navigation in a portable way,
-    we use a numbered menu with visual highlighting for the current selection.
+    Uses arrow keys (up/down) + Enter to select. Falls back to numbered
+    input if keyboard reading fails (e.g., piped input, CI).
+
+    Also supports: j/k for vim-style navigation, q/Escape to cancel.
 
     Args:
         console: Rich Console instance.
@@ -369,6 +371,78 @@ def select_menu(
     Returns:
         Selected index (0-based), or -1 if cancelled.
     """
+    try:
+        return _arrow_key_menu(console, title, options, descriptions)
+    except Exception:
+        return _fallback_numbered_menu(console, title, options, descriptions)
+
+
+def _arrow_key_menu(
+    console: Console,
+    title: str,
+    options: list[str],
+    descriptions: list[str] | None,
+) -> int:
+    """Arrow-key driven menu with live highlighting."""
+    from hauba.ui.keyboard import read_key
+
+    selected = 0
+    n = len(options)
+
+    def _render() -> str:
+        """Render the menu at current selection."""
+        lines: list[str] = []
+        lines.append(f"  [bold]{title}[/bold]")
+        lines.append(f"  [dim]{SYM_UP}/{SYM_DOWN} navigate  Enter select  q cancel[/dim]")
+        lines.append("")
+        for i, opt in enumerate(options):
+            desc = ""
+            if descriptions and i < len(descriptions):
+                desc = f" [dim]— {descriptions[i]}[/dim]"
+            if i == selected:
+                lines.append(f"    [bold cyan]{SYM_SELECT} {opt}[/bold cyan]{desc}")
+            else:
+                lines.append(f"      [dim]{opt}[/dim]{desc}")
+        return "\n".join(lines)
+
+    # Initial render
+    console.print()
+    output = _render()
+    console.print(output)
+
+    while True:
+        key = read_key()
+
+        if key == "up":
+            selected = (selected - 1) % n
+        elif key == "down":
+            selected = (selected + 1) % n
+        elif key == "enter" or key == "space":
+            # Clear and show final selection
+            console.print(f"\n  [green]{SYM_CHECK}[/green] [bold]{options[selected]}[/bold]")
+            return selected
+        elif key in ("escape", "quit"):
+            console.print("\n  [dim]Cancelled[/dim]")
+            return -1
+        else:
+            continue
+
+        # Re-render: move cursor up to overwrite previous menu
+        # Use ANSI escape to move up N+3 lines (title + hint + blank + options)
+        move_up = n + 3
+        console.file.write(f"\033[{move_up}A\033[J")
+        console.file.flush()
+        output = _render()
+        console.print(output)
+
+
+def _fallback_numbered_menu(
+    console: Console,
+    title: str,
+    options: list[str],
+    descriptions: list[str] | None,
+) -> int:
+    """Fallback numbered menu when keyboard input isn't available."""
     console.print()
     console.print(f"  [bold]{title}[/bold]")
     console.print()
