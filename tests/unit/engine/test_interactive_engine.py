@@ -9,7 +9,6 @@ import pytest
 from hauba.engine.copilot_engine import CopilotEngine, PlanState
 from hauba.engine.types import EngineConfig, EngineResult, ProviderType
 
-
 # --- PlanState tests ---
 
 
