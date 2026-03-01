@@ -19,6 +19,7 @@ Architecture:
   BYOK: Users bring their own API key. Hauba owner pays ZERO.
 """
 
+import asyncio
 import json
 import os
 import subprocess
@@ -194,8 +195,6 @@ def create_server_app():
     # ── AI Engineer API ───────────────────────────────────────────────────
 
     try:
-        import asyncio
-
         from hauba.api.server import (
             SUPPORTED_MODELS,
             TaskRequest,
@@ -338,17 +337,21 @@ def create_server_app():
                     return Response(content="", status_code=200)
 
                 # Validate Twilio signature
+                # Use X-Forwarded-* headers to reconstruct the public URL
+                # (Railway/proxies rewrite the URL to internal host:port)
                 signature = request.headers.get("X-Twilio-Signature", "")
-                webhook_url = str(request.url)
-                if signature and not _wa_bot.validate_signature(
-                    webhook_url, params, signature
-                ):
-                    return Response(content="Invalid signature", status_code=403)
+                if signature:
+                    forwarded_proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
+                    forwarded_host = request.headers.get(
+                        "X-Forwarded-Host",
+                        request.headers.get("Host", request.url.hostname or ""),
+                    )
+                    webhook_url = f"{forwarded_proto}://{forwarded_host}{request.url.path}"
+                    if not _wa_bot.validate_signature(webhook_url, params, signature):
+                        return Response(content="Invalid signature", status_code=403)
 
                 # ACK immediately, process in background
-                asyncio.create_task(
-                    _wa_bot.handle_message(body, from_number, message_sid)
-                )
+                asyncio.create_task(_wa_bot.handle_message(body, from_number, message_sid))
                 return Response(content="", status_code=200)
 
             @app.get("/whatsapp/status", include_in_schema=False)
