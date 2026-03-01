@@ -288,27 +288,61 @@ async def _cli_delivery_handler(output: str, session_id: str) -> None:
         await _deliver_discord(summary)
 
 
-async def _deliver_whatsapp(summary: str) -> None:
-    """Deliver results via WhatsApp."""
-    console.print("  [dim]WhatsApp delivery requires Twilio credentials.[/dim]")
+def _resolve_twilio_creds() -> tuple[str, str, str, str]:
+    """Resolve Twilio credentials from env vars > config file.
 
+    Returns (account_sid, auth_token, from_number, to_number).
+    Env vars take priority: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
+    TWILIO_WHATSAPP_NUMBER, HAUBA_WHATSAPP_TO.
+    """
     from hauba.core.config import ConfigManager
 
     config = ConfigManager()
-    sid = config.get("whatsapp.account_sid") or ""
-    token = config.get("whatsapp.auth_token") or ""
-    from_num = config.get("whatsapp.from_number") or ""
 
-    if not sid or not token or not from_num:
+    sid = os.environ.get("TWILIO_ACCOUNT_SID") or config.get("whatsapp.account_sid") or ""
+    token = os.environ.get("TWILIO_AUTH_TOKEN") or config.get("whatsapp.auth_token") or ""
+    from_num = (
+        os.environ.get("TWILIO_WHATSAPP_NUMBER")
+        or config.get("whatsapp.from_number")
+        or "whatsapp:+14155238886"
+    )
+    to_num = os.environ.get("HAUBA_WHATSAPP_TO") or config.get("whatsapp.to_number") or ""
+
+    return sid, token, from_num, to_num
+
+
+async def _deliver_whatsapp(summary: str) -> None:
+    """Deliver results via WhatsApp — zero-friction if configured."""
+    sid, token, from_num, to_number = _resolve_twilio_creds()
+
+    if not sid or not token:
         console.print(
-            "[yellow]WhatsApp not configured.[/yellow]\n"
-            "  Run: hauba config whatsapp.account_sid <YOUR_SID>\n"
-            "       hauba config whatsapp.auth_token <YOUR_TOKEN>\n"
-            "       hauba config whatsapp.from_number whatsapp:+14155238886"
+            Panel(
+                "[bold yellow]WhatsApp not set up yet[/bold yellow]\n\n"
+                "  Run: [bold]hauba setup whatsapp[/bold]\n\n"
+                "  Or set env vars (Railway / .env):\n"
+                "    TWILIO_ACCOUNT_SID=your_sid\n"
+                "    TWILIO_AUTH_TOKEN=your_token",
+                border_style="yellow",
+                padding=(1, 2),
+            )
         )
         return
 
-    to_number = Prompt.ask("  [bold]Recipient WhatsApp number[/bold] (e.g., +1234567890)")
+    # If no saved recipient, ask once
+    if not to_number:
+        to_number = Prompt.ask(
+            "  [bold]Your WhatsApp number[/bold] [dim](e.g. +9779812345678)[/dim]"
+        )
+        if not to_number.strip():
+            console.print("  [dim]Skipped.[/dim]")
+            return
+        # Save for next time
+        from hauba.core.config import ConfigManager
+
+        cfg = ConfigManager()
+        cfg.set("whatsapp.to_number", to_number.strip())
+        console.print("  [dim]Saved your number for future deliveries.[/dim]")
 
     try:
         from hauba.channels.whatsapp import WhatsAppChannel
@@ -327,6 +361,10 @@ async def _deliver_whatsapp(summary: str) -> None:
         console.print("  [green]+[/green] Delivered via WhatsApp")
     except Exception as exc:
         console.print(f"  [red]WhatsApp delivery failed: {exc}[/red]")
+        console.print(
+            "  [dim]Make sure you've joined the Twilio Sandbox first.[/dim]\n"
+            "  [dim]Run: hauba setup whatsapp[/dim]"
+        )
 
 
 async def _deliver_telegram(summary: str) -> None:
@@ -638,6 +676,117 @@ async def _conversation_loop(
             break
         except EOFError:
             break
+
+
+setup_app = typer.Typer(name="setup", help="Quick setup for channels and integrations")
+app.add_typer(setup_app, name="setup")
+
+
+@setup_app.command(name="whatsapp")
+def setup_whatsapp() -> None:
+    """Set up WhatsApp delivery in 30 seconds.
+
+    Uses Twilio's free WhatsApp Sandbox — no business account needed.
+    Just paste your Account SID + Auth Token, enter your phone number, done.
+    """
+    from hauba.core.config import ConfigManager
+
+    console.print()
+    console.print(
+        Panel(
+            "[bold cyan]WhatsApp Setup[/bold cyan]\n\n"
+            "Uses Twilio's free WhatsApp Sandbox.\n"
+            "No WhatsApp Business account needed — works instantly.\n\n"
+            "[bold]What you need:[/bold]\n"
+            "  1. A free Twilio account ([bold]twilio.com/try-twilio[/bold])\n"
+            "  2. Your Account SID and Auth Token\n"
+            "     (Twilio Console > Account Info — right on the dashboard)",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+    )
+    console.print()
+
+    config = ConfigManager()
+
+    # --- Step 1: Credentials ---
+    existing_sid = os.environ.get("TWILIO_ACCOUNT_SID") or config.get("whatsapp.account_sid") or ""
+
+    if existing_sid:
+        console.print(
+            f"  [green]+[/green] Twilio SID found: [dim]{existing_sid[:8]}...{existing_sid[-4:]}[/dim]"
+        )
+        reuse = Prompt.ask(
+            "  [bold]Use existing credentials?[/bold] [green]Y[/green]/n", default="y"
+        )
+        if reuse.strip().lower() not in ("n", "no"):
+            sid = existing_sid
+            token = os.environ.get("TWILIO_AUTH_TOKEN") or config.get("whatsapp.auth_token") or ""
+        else:
+            sid = Prompt.ask("  [bold]Account SID[/bold]").strip()
+            token = Prompt.ask("  [bold]Auth Token[/bold]", password=True).strip()
+    else:
+        sid = Prompt.ask("  [bold]Account SID[/bold]").strip()
+        token = Prompt.ask("  [bold]Auth Token[/bold]", password=True).strip()
+
+    if not sid or not token:
+        console.print("  [red]SID and Auth Token are required.[/red]")
+        return
+
+    config.set("whatsapp.account_sid", sid)
+    config.set("whatsapp.auth_token", token)
+
+    # --- Step 2: Phone number ---
+    existing_phone = config.get("whatsapp.to_number") or ""
+    if existing_phone:
+        console.print(f"  [green]+[/green] Your number: [bold]{existing_phone}[/bold]")
+        change = Prompt.ask("  [bold]Change number?[/bold] y/[red]N[/red]", default="n")
+        if change.strip().lower() in ("y", "yes"):
+            existing_phone = ""
+
+    if not existing_phone:
+        phone = Prompt.ask(
+            "  [bold]Your WhatsApp number[/bold] [dim](with country code, e.g. +9779812345678)[/dim]"
+        ).strip()
+        if phone:
+            config.set("whatsapp.to_number", phone)
+        else:
+            console.print("  [yellow]No number saved — you'll be asked at delivery time.[/yellow]")
+
+    # --- Step 3: Join sandbox instructions ---
+    console.print()
+    console.print(
+        Panel(
+            "[bold green]Almost done! Last step on your phone:[/bold green]\n\n"
+            "  1. Open WhatsApp on your phone\n"
+            "  2. Send this message to [bold]+1 (415) 523-8886[/bold]:\n\n"
+            "     [bold cyan]join <your-sandbox-code>[/bold cyan]\n\n"
+            "  Find your sandbox code at:\n"
+            "  [bold]console.twilio.com/us1/develop/sms/try-it-out/whatsapp-learn[/bold]\n\n"
+            "  [dim]After sending the join message, Twilio will reply confirming\n"
+            "  your sandbox is connected. Then Hauba can deliver to your WhatsApp.[/dim]",
+            title="[bold green]Connect Your Phone[/bold green]",
+            border_style="green",
+            padding=(1, 2),
+        )
+    )
+
+    # --- Summary ---
+    console.print()
+    console.print(
+        Panel(
+            "[bold green]WhatsApp setup complete![/bold green]\n\n"
+            "  Credentials saved to ~/.hauba/settings.json\n\n"
+            "  [bold]For Railway / production:[/bold]\n"
+            "  Set these env vars in your Railway dashboard:\n\n"
+            f"    TWILIO_ACCOUNT_SID={sid}\n"
+            f"    TWILIO_AUTH_TOKEN={token}\n\n"
+            "  [dim]Env vars override config file, so Railway will just work.[/dim]\n\n"
+            '  [bold]Test it:[/bold] hauba run "hello world" --interactive',
+            border_style="green",
+            padding=(1, 2),
+        )
+    )
 
 
 @app.command()

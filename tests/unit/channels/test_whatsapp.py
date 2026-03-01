@@ -47,3 +47,45 @@ def test_whatsapp_channel_add_recipient() -> None:
     # With whatsapp: prefix
     wa.add_recipient("whatsapp:+9876543210")
     assert "whatsapp:+9876543210" in wa._recipient_numbers
+
+
+def test_whatsapp_config_defaults() -> None:
+    """WhatsAppConfig has sensible defaults (sandbox number pre-filled)."""
+    from hauba.core.config import WhatsAppConfig
+
+    cfg = WhatsAppConfig()
+    assert cfg.from_number == "whatsapp:+14155238886"
+    assert cfg.account_sid == ""
+    assert cfg.auth_token == ""
+    assert cfg.to_number == ""
+    assert cfg.sandbox_code == ""
+
+
+def test_resolve_twilio_creds_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_resolve_twilio_creds reads from env vars first."""
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "env_sid_123")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "env_token_456")
+    monkeypatch.setenv("HAUBA_WHATSAPP_TO", "+9779800000000")
+
+    from hauba.cli import _resolve_twilio_creds
+
+    sid, token, from_num, to_num = _resolve_twilio_creds()
+    assert sid == "env_sid_123"
+    assert token == "env_token_456"
+    assert from_num == "whatsapp:+14155238886"  # Default sandbox
+    assert to_num == "+9779800000000"
+
+
+def test_resolve_twilio_creds_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_resolve_twilio_creds returns empty strings when nothing is configured."""
+    # Clear any existing env vars
+    monkeypatch.delenv("TWILIO_ACCOUNT_SID", raising=False)
+    monkeypatch.delenv("TWILIO_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("TWILIO_WHATSAPP_NUMBER", raising=False)
+    monkeypatch.delenv("HAUBA_WHATSAPP_TO", raising=False)
+
+    from hauba.cli import _resolve_twilio_creds
+
+    _sid, _token, from_num, _to_num = _resolve_twilio_creds()
+    # SID/token might come from config file if it exists, but from_num should be sandbox default
+    assert from_num == "whatsapp:+14155238886"

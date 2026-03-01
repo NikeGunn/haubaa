@@ -32,10 +32,21 @@ class LLMConfig(BaseModel):
     base_url: str = ""
 
 
+class WhatsAppConfig(BaseModel):
+    """WhatsApp delivery configuration (Twilio Sandbox)."""
+
+    account_sid: str = ""  # Or env TWILIO_ACCOUNT_SID
+    auth_token: str = ""  # Or env TWILIO_AUTH_TOKEN
+    from_number: str = "whatsapp:+14155238886"  # Twilio Sandbox default
+    to_number: str = ""  # Owner's WhatsApp number, e.g. "+9779812345678"
+    sandbox_code: str = ""  # Twilio sandbox join code
+
+
 class HaubaSettings(BaseModel):
     """Root settings model."""
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    whatsapp: WhatsAppConfig = Field(default_factory=WhatsAppConfig)
     owner_name: str = ""
     data_dir: str = ""
     log_level: str = "INFO"
