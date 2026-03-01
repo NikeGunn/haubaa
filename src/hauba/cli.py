@@ -43,6 +43,51 @@ app.add_typer(skill_app, name="skill")
 compose_app = typer.Typer(name="compose", help="Manage agent teams via hauba.yaml")
 app.add_typer(compose_app, name="compose")
 
+
+def _configure_logging_to_file() -> None:
+    """Redirect structlog output to ~/.hauba/logs/ instead of stdout.
+
+    Without this, structlog's default ConsoleRenderer dumps all log lines
+    (engine.starting, engine.connected, etc.) directly to the terminal,
+    cluttering the interactive UI.
+    """
+    import logging
+
+    import structlog
+
+    from hauba.core.constants import LOGS_DIR
+
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = LOGS_DIR / "hauba.log"
+
+    # File handler for Python stdlib logging
+    file_handler = logging.FileHandler(str(log_file), encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+
+    # Configure stdlib logging to write to file only
+    logging.basicConfig(
+        handlers=[file_handler],
+        level=logging.INFO,
+        format="%(message)s",
+        force=True,
+    )
+
+    # Configure structlog to use stdlib logging (which goes to file)
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.StackInfoRenderer(),
+            structlog.dev.set_exc_info,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+
+
 # Force UTF-8 on Windows to avoid cp1252 UnicodeEncodeError with Rich
 if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
@@ -187,6 +232,7 @@ def run(
     - Agent runs to completion without pausing
     """
     _check_init()
+    _configure_logging_to_file()
     asyncio.run(_run_task(task, workspace, continue_session, interactive))
 
 
@@ -508,44 +554,65 @@ async def _run_task(
     ui.show_thinking()
 
     # Wire up engine events to the interactive UI
+    # Only process known event types — silently ignore the rest.
+    handled_events = {
+        "assistant.message_delta",
+        "assistant.reasoning_delta",
+        "tool.execution_start",
+        "tool.execution_complete",
+        "session.plan_changed",
+        "session.workspace_file_changed",
+        "engine.human_escalation",
+        "subagent.started",
+        "subagent.completed",
+    }
+
+    def _get_data_attr(data: object, key: str, default: str = "") -> str:
+        """Safely get a string attribute from a dict or dataclass."""
+        if isinstance(data, dict):
+            return str(data.get(key, default))
+        return str(getattr(data, key, default) or default)
+
     def on_event(event: object) -> None:
         etype = getattr(event, "type", "")
+        if etype not in handled_events:
+            return  # Silently ignore unknown events
+
         data = getattr(event, "data", None)
 
         if etype == "assistant.message_delta":
-            delta = ""
-            if isinstance(data, dict) and data.get("delta_content"):
-                delta = data["delta_content"]
-            elif data is not None and hasattr(data, "delta_content"):
-                delta = data.delta_content or ""  # type: ignore[union-attr]
+            delta = _get_data_attr(data, "delta_content")
             if delta:
                 ui.show_streaming_delta(delta)
 
         elif etype == "assistant.reasoning_delta":
-            # Show thinking/reasoning text
-            delta = ""
-            if isinstance(data, dict):
-                delta = data.get("delta_content", "")
-            elif data is not None and hasattr(data, "delta_content"):
-                delta = data.delta_content or ""  # type: ignore[union-attr]
+            delta = _get_data_attr(data, "delta_content")
             if delta:
                 console.print(f"[dim italic]{delta}[/dim italic]", end="")
 
         elif etype == "tool.execution_start":
-            tool_name = ""
+            tool_name = _get_data_attr(data, "tool_name") or _get_data_attr(data, "name")
+            if not tool_name:
+                return
+
+            # Extract a readable detail from arguments
             tool_detail = ""
-            if isinstance(data, dict):
-                tool_name = data.get("tool_name", data.get("name", str(data)))
-                args = data.get("arguments", data.get("input", ""))
-                if isinstance(args, dict):
-                    tool_detail = str(args.get("command", args.get("file_path", "")))[:120]
-                else:
-                    tool_detail = str(args)[:120]
-            elif data is not None:
-                tool_name = getattr(data, "tool_name", "") or getattr(data, "name", "")
-                tool_detail = str(getattr(data, "arguments", ""))[:120]
-            if tool_name:
-                ui.show_tool_start(tool_name, tool_detail)
+            args = (
+                data.get("arguments", None)
+                if isinstance(data, dict)
+                else getattr(data, "arguments", None)
+            )
+            if isinstance(args, dict):
+                tool_detail = str(
+                    args.get("command", "")
+                    or args.get("file_path", "")
+                    or args.get("path", "")
+                    or args.get("query", "")
+                )[:120]
+            elif isinstance(args, str):
+                tool_detail = args[:120]
+
+            ui.show_tool_start(tool_name, tool_detail)
 
         elif etype == "tool.execution_complete":
             output = ""
@@ -555,12 +622,11 @@ async def _run_task(
                 if isinstance(result, dict):
                     output = str(result.get("output", ""))[:200]
                     success = not result.get("is_error", False)
-                else:
-                    output = str(data.get("output", ""))[:200]
             elif data is not None:
                 result = getattr(data, "result", None)
                 if result:
                     output = str(getattr(result, "output", ""))[:200]
+                    success = not getattr(result, "is_error", False)
             ui.show_tool_result(output, success)
 
         elif etype == "session.plan_changed":
@@ -678,7 +744,11 @@ async def _conversation_loop(
             break
 
 
-setup_app = typer.Typer(name="setup", help="Quick setup for channels and integrations")
+setup_app = typer.Typer(
+    name="setup",
+    help="Quick setup for channels and integrations",
+    no_args_is_help=True,
+)
 app.add_typer(setup_app, name="setup")
 
 
@@ -886,6 +956,7 @@ async def _replay_task(task_id: str, speed: float, show_data: bool) -> None:
 def voice() -> None:
     """Start voice conversation mode (speak to Hauba)."""
     _check_init()
+    _configure_logging_to_file()
     asyncio.run(_voice_loop())
 
 
@@ -1049,6 +1120,7 @@ def compose_up(
 ) -> None:
     """Run a task using a compose agent team."""
     _check_init()
+    _configure_logging_to_file()
     asyncio.run(_compose_run(task, file))
 
 
