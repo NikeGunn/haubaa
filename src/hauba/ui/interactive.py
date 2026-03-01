@@ -373,8 +373,39 @@ def select_menu(
     """
     try:
         return _arrow_key_menu(console, title, options, descriptions)
-    except Exception:
+    except Exception as exc:
+        # Log why arrow-key menu failed so we can debug
+        import structlog
+
+        structlog.get_logger().debug(
+            "select_menu.arrow_key_fallback",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            platform=sys.platform,
+            is_tty=sys.stdin.isatty() if hasattr(sys.stdin, "isatty") else "unknown",
+        )
         return _fallback_numbered_menu(console, title, options, descriptions)
+
+
+def _enable_vt100_windows() -> None:
+    """Enable VT100 ANSI escape processing on Windows 10+.
+
+    Without this, cursor-movement escapes (\\033[A, \\033[J) print as
+    garbage instead of moving the cursor.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mode = ctypes.c_ulong()
+        kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+        # ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+    except Exception:
+        pass
 
 
 def _arrow_key_menu(
@@ -385,6 +416,9 @@ def _arrow_key_menu(
 ) -> int:
     """Arrow-key driven menu with live highlighting."""
     from hauba.ui.keyboard import read_key
+
+    # Ensure ANSI escapes work on Windows
+    _enable_vt100_windows()
 
     selected = 0
     n = len(options)

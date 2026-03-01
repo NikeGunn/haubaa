@@ -135,7 +135,7 @@ def create_server_app():
             "AI Software Engineer as a Service. BYOK — bring your own API key. "
             "Powered by GitHub Copilot SDK."
         ),
-        version="0.2.1",
+        version="0.4.0",
         docs_url="/docs",
         redoc_url="/redoc",
     )
@@ -314,6 +314,127 @@ def create_server_app():
         print(f"[hauba] Warning: API module not available: {e}")
         print("[hauba] Landing page and install scripts will still work.")
 
+    # ── Task Queue (Queue + Poll architecture) ────────────────────────────
+    # Tasks are queued by channels (WhatsApp, Telegram, etc.) and polled
+    # by the user's local `hauba agent` daemon for execution on their machine.
+
+    try:
+        from hauba.daemon.queue import TaskQueue
+
+        _task_queue = TaskQueue()
+
+        @app.post("/api/v1/queue", include_in_schema=False)
+        async def queue_submit(request: Request):
+            """Submit a task to the queue (used by channels internally)."""
+            data = await request.json()
+            owner_id = data.get("owner_id", "")
+            instruction = data.get("instruction", "")
+            channel = data.get("channel", "")
+            channel_address = data.get("channel_address", "")
+
+            if not owner_id or not instruction:
+                from fastapi import HTTPException
+
+                raise HTTPException(400, "owner_id and instruction required")
+
+            try:
+                task = _task_queue.submit(
+                    owner_id=owner_id,
+                    instruction=instruction,
+                    channel=channel,
+                    channel_address=channel_address,
+                )
+                return {
+                    "task_id": task.task_id,
+                    "status": task.status,
+                    "message": "Task queued. Your local `hauba agent` will pick it up.",
+                }
+            except ValueError as exc:
+                from fastapi import HTTPException
+
+                raise HTTPException(429, str(exc))
+
+        @app.get("/api/v1/queue/{owner_id}", include_in_schema=False)
+        async def queue_poll(owner_id: str):
+            """Poll for queued tasks (used by hauba agent daemon)."""
+            tasks = _task_queue.poll(owner_id)
+            return [
+                {
+                    "task_id": t.task_id,
+                    "instruction": t.instruction,
+                    "created_at": t.created_at,
+                    "metadata": t.metadata,
+                }
+                for t in tasks
+            ]
+
+        @app.post("/api/v1/queue/{task_id}/claim", include_in_schema=False)
+        async def queue_claim(task_id: str):
+            """Claim a task for execution (used by hauba agent daemon)."""
+            task = _task_queue.claim(task_id)
+            if not task:
+                from fastapi import HTTPException
+
+                raise HTTPException(404, "Task not found or already claimed")
+            return {"task_id": task.task_id, "status": "claimed"}
+
+        @app.post("/api/v1/queue/{task_id}/progress", include_in_schema=False)
+        async def queue_progress(task_id: str, request: Request):
+            """Report progress on a task (used by hauba agent daemon)."""
+            data = await request.json()
+            progress = data.get("progress", "")
+            updated = _task_queue.update_progress(task_id, progress)
+            if not updated:
+                from fastapi import HTTPException
+
+                raise HTTPException(404, "Task not found or not running")
+            return {"task_id": task_id, "status": "running", "progress": progress}
+
+        @app.post("/api/v1/queue/{task_id}/complete", include_in_schema=False)
+        async def queue_complete(task_id: str, request: Request):
+            """Report task completion (used by hauba agent daemon)."""
+            data = await request.json()
+            output = data.get("output", "")
+            success = data.get("success", True)
+            error = data.get("error", "")
+
+            completed = await _task_queue.complete(
+                task_id=task_id,
+                output=output,
+                success=success,
+                error=error,
+            )
+            if not completed:
+                from fastapi import HTTPException
+
+                raise HTTPException(404, "Task not found")
+
+            return {
+                "task_id": task_id,
+                "status": "completed" if success else "failed",
+            }
+
+        @app.get("/api/v1/queue/{owner_id}/status", include_in_schema=False)
+        async def queue_status(owner_id: str):
+            """Get all tasks for an owner (used by channels for status checks)."""
+            tasks = _task_queue.get_owner_tasks(owner_id)
+            return [
+                {
+                    "task_id": t.task_id,
+                    "status": t.status,
+                    "instruction": t.instruction[:100],
+                    "progress": t.progress,
+                    "created_at": t.created_at,
+                    "completed_at": t.completed_at,
+                }
+                for t in tasks
+            ]
+
+        print("[hauba] Task queue endpoints loaded (Queue + Poll architecture).")
+    except ImportError as e:
+        _task_queue = None  # type: ignore[assignment]
+        print(f"[hauba] Warning: Task queue not available: {e}")
+
     # ── WhatsApp Webhook (hidden from docs) ───────────────────────────────
     try:
         from hauba.channels.whatsapp_webhook import WhatsAppBot
@@ -322,6 +443,28 @@ def create_server_app():
         _wa_enabled = _wa_bot.configure()
 
         if _wa_enabled:
+            # Wire task queue to WhatsApp bot for completion notifications
+            if _task_queue is not None:
+                _wa_bot.set_task_queue(_task_queue)
+
+                async def _notify_wa_on_completion(task) -> None:
+                    """Send WhatsApp notification when a queued task completes."""
+                    if task.channel == "whatsapp" and task.channel_address:
+                        if task.status == "completed":
+                            msg = (
+                                f"*Task Complete*\n\n"
+                                f"{task.output[:1400]}\n\n"
+                                f"_Built on your machine by hauba agent_"
+                            )
+                        else:
+                            msg = (
+                                f"*Task Failed*\n\n"
+                                f"Error: {task.error[:300]}\n\n"
+                                "Send /new to start fresh."
+                            )
+                        await _wa_bot._send_reply(task.channel_address, msg)
+
+                _task_queue.on_completion(_notify_wa_on_completion)
 
             @app.post("/whatsapp/webhook", include_in_schema=False)
             async def whatsapp_webhook(request: Request):

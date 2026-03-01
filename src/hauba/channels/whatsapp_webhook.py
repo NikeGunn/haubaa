@@ -53,6 +53,13 @@ MAX_MSG_LEN = 1600
 # Idle session timeout (30 minutes)
 SESSION_TIMEOUT = 1800.0
 
+# Task execution timeout — configurable via HAUBA_TASK_TIMEOUT env var
+# Default: 300s (5 min). Building real apps takes time.
+TASK_TIMEOUT = float(os.environ.get("HAUBA_TASK_TIMEOUT", "300"))
+
+# Progress update interval — how often to send "still working" messages
+PROGRESS_INTERVAL = 30.0
+
 
 @dataclass
 class UserSession:
@@ -86,6 +93,15 @@ class WhatsAppBot:
         self._twilio_client: Any = None
         self._from_number: str = "whatsapp:+14155238886"
         self._cleanup_task: asyncio.Task[None] | None = None
+        self._task_queue: Any = None  # TaskQueue instance (set by server.py)
+
+    def set_task_queue(self, queue: Any) -> None:
+        """Set the task queue for Queue + Poll architecture.
+
+        When set, build tasks are queued for the user's local agent
+        instead of being executed on the server.
+        """
+        self._task_queue = queue
 
     def configure(self) -> bool:
         """Load configuration from environment variables.
@@ -190,10 +206,15 @@ class WhatsAppBot:
             return
         if lower in ("/new", "/reset", "/clear"):
             await self._destroy_session(from_number)
+            if self._task_queue:
+                self._task_queue.clear_owner(from_number)
             await self._send_reply(
                 from_number,
                 "Session cleared. Send a new task to get started.",
             )
+            return
+        if lower in ("/status", "status"):
+            await self._send_status(from_number)
             return
 
         # Get or create user session
@@ -207,37 +228,220 @@ class WhatsAppBot:
             if session.is_first:
                 session.is_first = False
                 await self._send_reply(from_number, GREETING)
-                # Small delay so greeting arrives first
                 await asyncio.sleep(0.5)
 
-            # Send "thinking" acknowledgment
-            await self._send_reply(
-                from_number,
-                "_Processing your request..._",
-            )
+            # Route: build tasks → queue, chat → lightweight LLM response
+            if self._is_build_task(body):
+                await self._queue_build_task(from_number, body)
+            else:
+                # Simple chat/greeting — use server LLM key (lightweight)
+                await self._send_reply(from_number, "_Processing your request..._")
+                try:
+                    response = await self._process_with_progress(session, body, from_number)
+                    chunks = self.split_message(response)
+                    for chunk in chunks:
+                        await self._send_reply(from_number, chunk)
+                        if len(chunks) > 1:
+                            await asyncio.sleep(0.3)
+                except Exception as exc:
+                    logger.error(
+                        "whatsapp_bot.process_error",
+                        from_number=from_number,
+                        error=str(exc),
+                    )
+                    await self._send_reply(
+                        from_number,
+                        f"Sorry, something went wrong: {str(exc)[:200]}\n\n"
+                        "Send /new to start a fresh session.",
+                    )
 
+    @staticmethod
+    def _is_build_task(body: str) -> bool:
+        """Detect if a message is a build/engineering task vs simple chat.
+
+        Build tasks are routed to the queue for local execution.
+        Simple chat (greetings, questions, status) uses the server LLM key.
+        """
+        lower = body.strip().lower()
+
+        # Short messages are usually chat
+        if len(lower) < 15:
+            return False
+
+        # Build keywords
+        build_keywords = [
+            "build",
+            "create",
+            "make",
+            "develop",
+            "implement",
+            "code",
+            "write",
+            "generate",
+            "deploy",
+            "setup",
+            "install",
+            "add",
+            "fix",
+            "update",
+            "refactor",
+            "migrate",
+            "scrape",
+            "crawl",
+            "automate",
+            "train",
+            "process",
+            "edit video",
+            "convert",
+            "transform",
+            "analyze",
+            "api",
+            "app",
+            "website",
+            "dashboard",
+            "database",
+            "saas",
+            "rest",
+            "crud",
+            "auth",
+            "stripe",
+        ]
+        return any(kw in lower for kw in build_keywords)
+
+    async def _queue_build_task(self, from_number: str, body: str) -> None:
+        """Queue a build task for the user's local agent.
+
+        If no task queue is configured, falls back to direct execution.
+        """
+        if not self._task_queue:
+            # Fallback: no queue configured, run on server
+            session = self._get_or_create_session(from_number)
+            await self._send_reply(from_number, "_Processing your request..._")
             try:
-                response = await self._process_with_engine(session, body, from_number)
-                # Split and send response
+                response = await self._process_with_progress(session, body, from_number)
                 chunks = self.split_message(response)
                 for chunk in chunks:
                     await self._send_reply(from_number, chunk)
                     if len(chunks) > 1:
                         await asyncio.sleep(0.3)
-
             except Exception as exc:
-                logger.error(
-                    "whatsapp_bot.process_error",
-                    from_number=from_number,
-                    error=str(exc),
-                )
                 await self._send_reply(
                     from_number,
-                    f"Sorry, something went wrong: {str(exc)[:200]}\n\n"
-                    "Send /new to start a fresh session.",
+                    f"Error: {str(exc)[:200]}\nSend /new to start fresh.",
                 )
+            return
 
-    async def _process_with_engine(self, session: UserSession, body: str, _from_number: str) -> str:
+        try:
+            task = self._task_queue.submit(
+                owner_id=from_number,
+                instruction=body,
+                channel="whatsapp",
+                channel_address=from_number,
+            )
+            await self._send_reply(
+                from_number,
+                f"*Task Queued*\n\n"
+                f"_{body[:200]}_\n\n"
+                f"Your task is queued for your local Hauba agent.\n\n"
+                f"Make sure `hauba agent` is running on your machine.\n"
+                f"It will pick up this task and build it locally.\n\n"
+                f"Commands:\n"
+                f"  /status — Check task progress\n"
+                f"  /clear  — Cancel all tasks\n\n"
+                f"_Task ID: {task.task_id[:8]}_",
+            )
+        except ValueError as exc:
+            await self._send_reply(from_number, f"Error: {exc}")
+
+    async def _send_status(self, from_number: str) -> None:
+        """Send task status summary to the user."""
+        if not self._task_queue:
+            await self._send_reply(from_number, "No task queue configured.")
+            return
+
+        tasks = self._task_queue.get_owner_tasks(from_number)
+        if not tasks:
+            await self._send_reply(from_number, "No tasks found. Send a task to get started.")
+            return
+
+        lines = ["*Your Tasks*\n"]
+        status_emoji = {
+            "queued": "⏳",
+            "claimed": "🔄",
+            "running": "⚡",
+            "completed": "✅",
+            "failed": "❌",
+            "expired": "⏰",
+        }
+        for t in tasks[-5:]:  # Show last 5
+            emoji = status_emoji.get(t.status, "❓")
+            line = f"{emoji} {t.instruction[:60]}"
+            if t.progress:
+                line += f"\n   _{t.progress}_"
+            lines.append(line)
+
+        await self._send_reply(from_number, "\n".join(lines))
+
+    async def _process_with_progress(
+        self, session: UserSession, body: str, from_number: str
+    ) -> str:
+        """Run the message through CopilotEngine with periodic progress updates.
+
+        Sends "still working..." messages every PROGRESS_INTERVAL seconds
+        so the user knows the agent hasn't stalled.
+        """
+        progress_messages = [
+            "_Still working on it..._",
+            "_Making progress — hang tight..._",
+            "_Building your project..._",
+            "_Almost there — finalizing..._",
+            "_Wrapping up the implementation..._",
+        ]
+
+        stop_progress = asyncio.Event()
+        progress_idx = 0
+
+        async def _send_progress() -> None:
+            """Send periodic progress updates while the engine works."""
+            nonlocal progress_idx
+            while not stop_progress.is_set():
+                try:
+                    await asyncio.wait_for(stop_progress.wait(), timeout=PROGRESS_INTERVAL)
+                    return  # stop_progress was set
+                except TimeoutError:
+                    msg = progress_messages[progress_idx % len(progress_messages)]
+                    await self._send_reply(from_number, msg)
+                    progress_idx += 1
+
+        progress_task = asyncio.create_task(_send_progress())
+
+        try:
+            result = await self._execute_with_engine(session, body)
+        finally:
+            stop_progress.set()
+            progress_task.cancel()
+            try:
+                await progress_task
+            except asyncio.CancelledError:
+                pass
+
+        if result.success:
+            return result.output or "Task completed successfully."
+
+        # Better timeout error message
+        error = result.error or "Unknown error"
+        if "timed out" in error.lower():
+            return (
+                "The task is taking longer than expected.\n\n"
+                "This can happen with larger projects. You can:\n"
+                "  1. Send your request again — I'll continue where I left off\n"
+                "  2. Try a simpler version first (e.g., just the HTML)\n"
+                "  3. Send /new to start fresh\n\n"
+                f"_Technical: {error}_"
+            )
+        return f"Error: {error}"
+
+    async def _execute_with_engine(self, session: UserSession, body: str) -> Any:
         """Run the message through CopilotEngine."""
         from hauba.engine.copilot_engine import CopilotEngine
         from hauba.engine.types import EngineConfig, ProviderType
@@ -253,6 +457,8 @@ class WhatsAppBot:
         if self._provider == "ollama":
             base_url = "http://localhost:11434/v1"
 
+        timeout = TASK_TIMEOUT
+
         if session.engine is None:
             config = EngineConfig(
                 provider=provider,
@@ -261,18 +467,13 @@ class WhatsAppBot:
                 base_url=base_url,
             )
             session.engine = CopilotEngine(config)
-            result = await session.engine.execute(body, timeout=120.0)
+            return await session.engine.execute(body, timeout=timeout)
         else:
             # Follow-up message to existing session
             if session.engine.session:
-                result = await session.engine.send_message(body, timeout=120.0)
+                return await session.engine.send_message(body, timeout=timeout)
             else:
-                result = await session.engine.execute(body, timeout=120.0)
-
-        if result.success:
-            return result.output or "Task completed successfully."
-        else:
-            return f"Error: {result.error or 'Unknown error'}"
+                return await session.engine.execute(body, timeout=timeout)
 
     async def _send_reply(self, to_number: str, text: str) -> None:
         """Send a WhatsApp reply via Twilio REST API."""

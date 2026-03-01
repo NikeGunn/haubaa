@@ -237,7 +237,7 @@ def create_app() -> FastAPI:
             "AI Software Engineer as a Service. BYOK — bring your own API key. "
             "The AI agent plans, codes, tests, and delivers. Zero hallucinations."
         ),
-        version="0.2.1",
+        version="0.4.0",
         docs_url="/docs",
         redoc_url="/redoc",
     )

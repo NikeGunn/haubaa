@@ -1055,6 +1055,119 @@ async def _voice_loop() -> None:
 
 
 @app.command()
+def agent(
+    server_url: str = typer.Option(
+        "https://hauba.tech",
+        "--server",
+        "-s",
+        help="Hauba server URL to poll for tasks",
+    ),
+    poll_interval: float = typer.Option(
+        10.0,
+        "--interval",
+        "-i",
+        help="Polling interval in seconds",
+    ),
+    workspace: str = typer.Option(
+        "",
+        "--workspace",
+        "-w",
+        help="Output directory for generated files (default: ./hauba-output/)",
+    ),
+    owner_id: str = typer.Option(
+        "",
+        "--owner",
+        "-o",
+        help="Owner ID to poll for (default: from config or WhatsApp number)",
+    ),
+) -> None:
+    """Start the Hauba agent daemon — polls server for tasks and builds locally.
+
+    This connects to your Hauba server (default: hauba.tech) and polls for
+    tasks queued via WhatsApp, Telegram, or the API. When a task arrives,
+    it executes locally on YOUR machine using YOUR API key.
+
+    The server never sees your API key. Tasks are built here, results
+    are sent back to the server for delivery to the originating channel.
+
+    Run this 24/7 to receive and execute tasks from any channel.
+
+    Examples:
+        hauba agent                           # Default: poll hauba.tech
+        hauba agent --server http://localhost:8080  # Local server
+        hauba agent --interval 30             # Poll every 30s
+        hauba agent --owner "whatsapp:+1234"  # Specific owner ID
+    """
+    _check_init()
+    _configure_logging_to_file()
+    asyncio.run(_run_agent(server_url, poll_interval, workspace, owner_id))
+
+
+async def _run_agent(
+    server_url: str,
+    poll_interval: float,
+    workspace_path: str,
+    owner_id: str,
+) -> None:
+    """Run the daemon agent that polls for and executes tasks."""
+    from hauba.core.config import ConfigManager
+    from hauba.daemon.agent import HaubaDaemon
+
+    config = ConfigManager()
+
+    # Resolve owner ID
+    resolved_owner = owner_id
+    if not resolved_owner:
+        # Try WhatsApp number from config
+        wa_number = config.get("whatsapp.to_number") or ""
+        if wa_number:
+            resolved_owner = (
+                f"whatsapp:{wa_number}" if not wa_number.startswith("whatsapp:") else wa_number
+            )
+        else:
+            resolved_owner = config.settings.owner_name or "default"
+
+    # Resolve workspace
+    ws = workspace_path
+    if not ws:
+        from pathlib import Path
+
+        ws = str(Path.cwd() / "hauba-output")
+        Path(ws).mkdir(parents=True, exist_ok=True)
+
+    console.print(
+        Panel(
+            f"[bold cyan]Hauba Agent Daemon[/bold cyan]\n\n"
+            f"  Server:    {server_url}\n"
+            f"  Owner:     {resolved_owner}\n"
+            f"  Workspace: {ws}\n"
+            f"  Polling:   every {poll_interval}s\n"
+            f"  Provider:  {config.settings.llm.provider}\n"
+            f"  Model:     {config.settings.llm.model}\n\n"
+            f"  [green]Tasks execute locally using YOUR API key.[/green]\n"
+            f"  [dim]The server never sees your credentials.[/dim]\n\n"
+            f"  [dim]Press Ctrl+C to stop.[/dim]",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+    )
+
+    daemon = HaubaDaemon(
+        owner_id=resolved_owner,
+        server_url=server_url,
+        poll_interval=poll_interval,
+        workspace=ws,
+    )
+
+    try:
+        await daemon.start()
+    except KeyboardInterrupt:
+        console.print("\n[dim]Agent daemon stopped.[/dim]")
+    finally:
+        await daemon.stop()
+
+
+@app.command()
 def serve(
     host: str = typer.Option("0.0.0.0", help="Host to bind to"),
     port: int = typer.Option(8420, help="Port to serve on"),
