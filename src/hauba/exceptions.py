@@ -53,3 +53,19 @@ class ComposeError(HaubaError):
 
 class SkillInstallError(HaubaError):
     """Skill installation failed."""
+
+
+class PluginError(HaubaError):
+    """Plugin loading or execution error."""
+
+
+class PluginNotFoundError(HaubaError):
+    """Requested plugin does not exist."""
+
+
+class EmailError(HaubaError):
+    """Email sending failed."""
+
+
+class WebFetchError(HaubaError):
+    """URL fetch or content conversion failed."""

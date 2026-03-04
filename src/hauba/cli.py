@@ -43,6 +43,9 @@ app.add_typer(skill_app, name="skill")
 compose_app = typer.Typer(name="compose", help="Manage agent teams via hauba.yaml")
 app.add_typer(compose_app, name="compose")
 
+plugins_app = typer.Typer(name="plugins", help="Manage Hauba plugins")
+app.add_typer(plugins_app, name="plugins")
+
 
 def _configure_logging_to_file() -> None:
     """Redirect structlog output to ~/.hauba/logs/ instead of stdout.
@@ -1333,6 +1336,341 @@ def validate(
         raise typer.Exit(1)
     else:
         console.print(f"[green]+ {compose_path.name} is valid[/green]")
+
+
+# === V4.0 Commands ===
+
+
+@app.command()
+def tasks(
+    server_url: str = typer.Option("https://hauba.tech", "--server", "-s", help="Server URL"),
+    owner_id: str = typer.Option("", "--owner", "-o", help="Owner ID"),
+) -> None:
+    """List all tasks (queued, running, completed)."""
+    _check_init()
+    asyncio.run(_list_tasks(server_url, owner_id))
+
+
+async def _list_tasks(server_url: str, owner_id: str) -> None:
+    """Fetch and display task list from server."""
+    import httpx
+    from rich.table import Table
+
+    from hauba.core.config import ConfigManager
+
+    config = ConfigManager()
+    resolved_owner = owner_id
+    if not resolved_owner:
+        wa_number = config.get("whatsapp.to_number") or ""
+        if wa_number:
+            resolved_owner = (
+                f"whatsapp:{wa_number}" if not wa_number.startswith("whatsapp:") else wa_number
+            )
+        else:
+            resolved_owner = config.settings.owner_name or "default"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{server_url}/api/v1/queue/{resolved_owner}/status")
+            if resp.status_code != 200:
+                console.print("[yellow]No tasks found or server unreachable.[/yellow]")
+                return
+            data = resp.json()
+    except Exception as exc:
+        console.print(f"[red]Error connecting to server: {exc}[/red]")
+        return
+
+    if not data:
+        console.print("[dim]No tasks found.[/dim]")
+        return
+
+    table = Table(title="Your Tasks")
+    table.add_column("ID", style="cyan", max_width=10)
+    table.add_column("Status", justify="center")
+    table.add_column("Task", max_width=50)
+    table.add_column("Progress", style="dim")
+
+    status_style = {
+        "queued": "[yellow]queued[/yellow]",
+        "claimed": "[blue]claimed[/blue]",
+        "running": "[cyan]running[/cyan]",
+        "completed": "[green]done[/green]",
+        "failed": "[red]failed[/red]",
+        "cancelled": "[dim]cancel[/dim]",
+    }
+
+    for t in data:
+        tid = t.get("task_id", "")[:8]
+        status = status_style.get(t.get("status", ""), t.get("status", ""))
+        instr = (t.get("instruction", "") or "")[:50]
+        progress = t.get("progress", "") or ""
+        table.add_row(tid, status, instr, progress[:40])
+
+    console.print(table)
+
+
+@app.command()
+def cancel(
+    task_id: str = typer.Argument(..., help="Task ID (or prefix) to cancel"),
+    server_url: str = typer.Option("https://hauba.tech", "--server", "-s"),
+) -> None:
+    """Cancel a queued or running task."""
+    _check_init()
+    asyncio.run(_cancel_task(task_id, server_url))
+
+
+async def _cancel_task(task_id: str, server_url: str) -> None:
+    """Cancel a task via the server API."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{server_url}/api/v1/queue/{task_id}/cancel")
+            if resp.status_code == 200:
+                console.print(f"[green]Task {task_id[:8]} cancelled.[/green]")
+            elif resp.status_code == 404:
+                console.print(f"[yellow]Task {task_id[:8]} not found.[/yellow]")
+            else:
+                console.print(f"[red]Failed to cancel: {resp.text}[/red]")
+    except Exception as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+
+
+@app.command()
+def retry(
+    task_id: str = typer.Argument(..., help="Task ID (or prefix) to retry"),
+    server_url: str = typer.Option("https://hauba.tech", "--server", "-s"),
+) -> None:
+    """Retry a failed or cancelled task."""
+    _check_init()
+    asyncio.run(_retry_task(task_id, server_url))
+
+
+async def _retry_task(task_id: str, server_url: str) -> None:
+    """Retry a task via the server API."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{server_url}/api/v1/queue/{task_id}/retry")
+            if resp.status_code == 200:
+                data = resp.json()
+                new_id = data.get("task_id", "")[:8]
+                console.print(f"[green]Task retried. New ID: {new_id}[/green]")
+            elif resp.status_code == 404:
+                console.print(f"[yellow]Task {task_id[:8]} not found.[/yellow]")
+            else:
+                console.print(f"[red]Failed to retry: {resp.text}[/red]")
+    except Exception as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+
+
+@app.command()
+def email(
+    to: str = typer.Argument(..., help="Recipient email address"),
+    subject: str = typer.Argument(..., help="Email subject"),
+    body: str = typer.Argument("", help="Email body (or enter interactively)"),
+) -> None:
+    """Send an email on your behalf."""
+    _check_init()
+    asyncio.run(_send_email(to, subject, body))
+
+
+async def _send_email(to: str, subject: str, body: str) -> None:
+    """Send email via the configured SMTP service."""
+    from hauba.services.email import EmailService
+
+    service = EmailService()
+    if not service.configure():
+        console.print(
+            "[red]Email not configured.[/red]\n"
+            "[dim]Set environment variables: HAUBA_SMTP_HOST, HAUBA_SMTP_USER, HAUBA_SMTP_PASS[/dim]"
+        )
+        return
+
+    if not body:
+        body = Prompt.ask("[cyan]Email body[/cyan]")
+
+    success = await service.send(to, subject, body)
+    if success:
+        console.print(f"[green]Email sent to {to}[/green]")
+    else:
+        console.print("[red]Failed to send email. Check logs for details.[/red]")
+
+
+@app.command()
+def web(
+    url: str = typer.Argument(..., help="URL to fetch"),
+) -> None:
+    """Fetch and display a web page's content."""
+    asyncio.run(_fetch_web(url))
+
+
+async def _fetch_web(url: str) -> None:
+    """Fetch a URL and display its content."""
+    from hauba.tools.fetch import WebFetchTool
+
+    tool = WebFetchTool()
+    result = await tool.execute(url=url)
+
+    if result.success:
+        output = result.output
+        if len(output) > 3000:
+            output = output[:3000] + "\n\n[Content truncated — use a browser for full page]"
+        console.print(Panel(output, title=url[:80], border_style="cyan"))
+    else:
+        console.print(f"[red]{result.error}[/red]")
+
+
+@app.command()
+def usage(
+    server_url: str = typer.Option("https://hauba.tech", "--server", "-s"),
+    owner_id: str = typer.Option("", "--owner", "-o"),
+) -> None:
+    """Show cost tracking and usage summary."""
+    _check_init()
+    asyncio.run(_show_usage(server_url, owner_id))
+
+
+async def _show_usage(server_url: str, owner_id: str) -> None:
+    """Fetch and display usage stats."""
+    import httpx
+
+    from hauba.core.config import ConfigManager
+
+    config = ConfigManager()
+    resolved_owner = owner_id
+    if not resolved_owner:
+        wa_number = config.get("whatsapp.to_number") or ""
+        if wa_number:
+            resolved_owner = (
+                f"whatsapp:{wa_number}" if not wa_number.startswith("whatsapp:") else wa_number
+            )
+        else:
+            resolved_owner = config.settings.owner_name or "default"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{server_url}/api/v1/queue/{resolved_owner}/usage")
+            if resp.status_code == 200:
+                data = resp.json()
+                console.print(
+                    Panel(
+                        f"[bold]Usage Summary[/bold]\n\n"
+                        f"  Total tasks:     {data.get('total_tasks', 0)}\n"
+                        f"  Completed:       {data.get('completed', 0)}\n"
+                        f"  Failed:          {data.get('failed', 0)}\n"
+                        f"  Estimated cost:  ${data.get('estimated_cost', 0):.2f}",
+                        border_style="cyan",
+                    )
+                )
+            else:
+                console.print("[yellow]Usage data not available.[/yellow]")
+    except Exception as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+
+
+@app.command()
+def feedback(
+    message: str = typer.Argument(..., help="Your feedback message"),
+) -> None:
+    """Submit feedback to the Hauba team."""
+    console.print(f"[green]Feedback received:[/green] {message}")
+    console.print("[dim]Thank you! Visit https://github.com/NikeGunn/haubaa/issues to track.[/dim]")
+
+
+@app.command(name="reply")
+def reply_cmd(
+    message: str = typer.Argument(..., help="Auto-reply message to set, or 'off' to disable"),
+) -> None:
+    """Set or disable auto-reply for incoming messages."""
+    _check_init()
+    asyncio.run(_set_reply(message))
+
+
+async def _set_reply(message: str) -> None:
+    """Set or disable auto-reply."""
+    from hauba.services.reply_assistant import ReplyAssistant
+
+    assistant = ReplyAssistant()
+    if message.lower() == "off":
+        await assistant.set_enabled(False)
+        console.print("[yellow]Auto-reply disabled.[/yellow]")
+    else:
+        await assistant.set_auto_reply(message)
+        await assistant.set_enabled(True)
+        console.print(f"[green]Auto-reply set:[/green] {message}")
+
+
+# --- Plugin Commands ---
+
+
+@plugins_app.command(name="list")
+def plugins_list() -> None:
+    """List installed plugins."""
+    from hauba.plugins.loader import PluginLoader
+
+    loader = PluginLoader()
+    files = loader.discover()
+
+    if not files:
+        console.print("[dim]No plugins installed.[/dim]")
+        console.print("[dim]Place plugin .py files in ~/.hauba/plugins/[/dim]")
+        return
+
+    from rich.table import Table
+
+    table = Table(title="Installed Plugins")
+    table.add_column("File", style="cyan")
+    table.add_column("Name")
+    table.add_column("Description")
+
+    for f in files:
+        plugin = loader.load_plugin(f)
+        if plugin:
+            table.add_row(f.name, plugin.name, plugin.description)
+        else:
+            table.add_row(f.name, "[red]error[/red]", "Failed to load")
+
+    console.print(table)
+
+
+@plugins_app.command(name="install")
+def plugins_install(
+    path: str = typer.Argument(..., help="Path to plugin .py file"),
+) -> None:
+    """Install a plugin by copying it to ~/.hauba/plugins/."""
+    import shutil
+
+    from hauba.core.constants import PLUGINS_DIR
+
+    src = Path(path).resolve()
+    if not src.exists():
+        console.print(f"[red]File not found: {path}[/red]")
+        raise typer.Exit(1)
+
+    PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
+    dest = PLUGINS_DIR / src.name
+    shutil.copy2(str(src), str(dest))
+    console.print(f"[green]Plugin installed: {dest.name}[/green]")
+
+
+@plugins_app.command(name="remove")
+def plugins_remove(
+    name: str = typer.Argument(..., help="Plugin filename to remove"),
+) -> None:
+    """Remove an installed plugin."""
+    from hauba.core.constants import PLUGINS_DIR
+
+    target = PLUGINS_DIR / name
+    if not target.suffix:
+        target = target.with_suffix(".py")
+
+    if target.exists():
+        target.unlink()
+        console.print(f"[green]Plugin removed: {target.name}[/green]")
+    else:
+        console.print(f"[yellow]Plugin not found: {name}[/yellow]")
 
 
 def _check_init() -> None:

@@ -41,9 +41,19 @@ GREETING = (
     "  - Docs, scripts & workflow automation\n\n"
     "Just describe what you need. We plan, build, test, and deliver.\n\n"
     "Commands:\n"
-    "  /help  - Show this menu\n"
-    "  /new   - Start a fresh project\n"
-    "  /reset - Clear session history\n\n"
+    "  /help     - Show this menu\n"
+    "  /new      - Start a fresh project\n"
+    "  /tasks    - List your tasks\n"
+    "  /cancel   - Cancel a task\n"
+    "  /retry    - Retry a failed task\n"
+    "  /status   - Quick status check\n"
+    "  /web URL  - Fetch a web page\n"
+    "  /email    - Send an email\n"
+    "  /reply    - Set auto-reply\n"
+    "  /usage    - Cost summary\n"
+    "  /plugins  - List plugins\n"
+    "  /feedback - Send feedback\n"
+    "  /reset    - Clear session\n\n"
     "_One message. Production code. hauba.tech_"
 )
 
@@ -94,6 +104,9 @@ class WhatsAppBot:
         self._from_number: str = "whatsapp:+14155238886"
         self._cleanup_task: asyncio.Task[None] | None = None
         self._task_queue: Any = None  # TaskQueue instance (set by server.py)
+        self._email_service: Any = None  # EmailService (set by server.py)
+        self._reply_assistant: Any = None  # ReplyAssistant (set by server.py)
+        self._plugin_registry: Any = None  # PluginRegistry (set by server.py)
 
     def set_task_queue(self, queue: Any) -> None:
         """Set the task queue for Queue + Poll architecture.
@@ -199,12 +212,14 @@ class WhatsAppBot:
         if not from_number.startswith("whatsapp:"):
             from_number = f"whatsapp:{from_number}"
 
+        # Parse command
+        cmd, args = self._parse_command(body)
+
         # Handle commands
-        lower = body.strip().lower()
-        if lower in ("/help", "help", "/start"):
+        if cmd in ("/help", "/start"):
             await self._send_reply(from_number, GREETING)
             return
-        if lower in ("/new", "/reset", "/clear"):
+        if cmd in ("/new", "/reset", "/clear"):
             await self._destroy_session(from_number)
             if self._task_queue:
                 self._task_queue.clear_owner(from_number)
@@ -213,9 +228,67 @@ class WhatsAppBot:
                 "Session cleared. Send a new task to get started.",
             )
             return
-        if lower in ("/status", "status"):
+        if cmd in ("/status",):
             await self._send_status(from_number)
             return
+        if cmd == "/tasks":
+            await self._handle_tasks(from_number)
+            return
+        if cmd == "/cancel":
+            await self._handle_cancel(from_number, args)
+            return
+        if cmd == "/retry":
+            await self._handle_retry(from_number, args)
+            return
+        if cmd == "/web":
+            await self._handle_web(from_number, args)
+            return
+        if cmd == "/email":
+            await self._handle_email(from_number, args)
+            return
+        if cmd == "/reply":
+            await self._handle_reply_cmd(from_number, args)
+            return
+        if cmd == "/usage":
+            await self._handle_usage(from_number)
+            return
+        if cmd == "/plugins":
+            await self._handle_plugins(from_number)
+            return
+        if cmd == "/feedback":
+            await self._handle_feedback(from_number, args)
+            return
+
+        # Non-command: check for simple text commands
+        lower = body.strip().lower()
+        if lower in ("help", "status"):
+            if lower == "help":
+                await self._send_reply(from_number, GREETING)
+            else:
+                await self._send_status(from_number)
+            return
+
+        # Check auto-reply first
+        if self._reply_assistant:
+            try:
+                auto_reply = await self._reply_assistant.handle_message(from_number, body)
+                if auto_reply:
+                    await self._send_reply(from_number, auto_reply)
+                    return
+            except Exception:
+                pass
+
+        # Check plugin hooks
+        if self._plugin_registry:
+            try:
+                plugin_reply = await self._plugin_registry.fire_on_message(
+                    "whatsapp", from_number, body
+                )
+                if plugin_reply:
+                    await self._send_reply(from_number, plugin_reply)
+                    return
+            except Exception:
+                pass
 
         # Get or create user session
         session = self._get_or_create_session(from_number)
@@ -474,6 +547,243 @@ class WhatsAppBot:
                 return await session.engine.send_message(body, timeout=timeout)
             else:
                 return await session.engine.execute(body, timeout=timeout)
+
+    @staticmethod
+    def _parse_command(body: str) -> tuple[str, str]:
+        """Parse /command <args> from message body.
+
+        Returns (command, args). If not a command, returns ("", body).
+        """
+        stripped = body.strip()
+        if not stripped.startswith("/"):
+            return ("", body)
+        parts = stripped.split(None, 1)
+        return (parts[0].lower(), parts[1] if len(parts) > 1 else "")
+
+    async def _handle_tasks(self, from_number: str) -> None:
+        """Show detailed task list with IDs."""
+        if not self._task_queue:
+            await self._send_reply(from_number, "No task queue configured.")
+            return
+
+        tasks = self._task_queue.get_owner_tasks(from_number)
+        if not tasks:
+            await self._send_reply(from_number, "No tasks found. Send a task to get started.")
+            return
+
+        lines = ["*Your Tasks*\n"]
+        status_emoji = {
+            "queued": "⏳",
+            "claimed": "🔄",
+            "running": "⚡",
+            "completed": "✅",
+            "failed": "❌",
+            "expired": "⏰",
+            "cancelled": "🚫",
+        }
+        for t in tasks[-10:]:
+            emoji = status_emoji.get(t.status, "❓")
+            tid = t.task_id[:8]
+            line = f"{emoji} `{tid}` {t.instruction[:50]}"
+            if t.progress:
+                line += f"\n   _{t.progress[:60]}_"
+            lines.append(line)
+
+        lines.append("\n_Use /cancel <id> or /retry <id>_")
+        await self._send_reply(from_number, "\n".join(lines))
+
+    async def _handle_cancel(self, from_number: str, args: str) -> None:
+        """Cancel a specific task by ID prefix."""
+        if not self._task_queue:
+            await self._send_reply(from_number, "No task queue configured.")
+            return
+
+        if not args:
+            await self._send_reply(from_number, "Usage: /cancel <task_id>")
+            return
+
+        prefix = args.strip().lower()
+        tasks = self._task_queue.get_owner_tasks(from_number)
+        target = None
+        for t in tasks:
+            if t.task_id.lower().startswith(prefix):
+                target = t
+                break
+
+        if not target:
+            await self._send_reply(from_number, f"No task found matching `{prefix}`")
+            return
+
+        if target.status in ("completed", "failed", "expired", "cancelled"):
+            await self._send_reply(from_number, f"Task `{prefix}` already {target.status}.")
+            return
+
+        self._task_queue.cancel(target.task_id)
+        await self._send_reply(from_number, f"✅ Task `{target.task_id[:8]}` cancelled.")
+
+    async def _handle_retry(self, from_number: str, args: str) -> None:
+        """Retry a failed task."""
+        if not self._task_queue:
+            await self._send_reply(from_number, "No task queue configured.")
+            return
+
+        if not args:
+            await self._send_reply(from_number, "Usage: /retry <task_id>")
+            return
+
+        prefix = args.strip().lower()
+        tasks = self._task_queue.get_owner_tasks(from_number)
+        target = None
+        for t in tasks:
+            if t.task_id.lower().startswith(prefix):
+                target = t
+                break
+
+        if not target:
+            await self._send_reply(from_number, f"No task found matching `{prefix}`")
+            return
+
+        if target.status not in ("failed", "cancelled", "expired"):
+            await self._send_reply(
+                from_number,
+                f"Task `{prefix}` is {target.status}. Only failed tasks can be retried.",
+            )
+            return
+
+        new_task = self._task_queue.submit(
+            owner_id=from_number,
+            instruction=target.instruction,
+            channel="whatsapp",
+            channel_address=from_number,
+        )
+        await self._send_reply(
+            from_number,
+            f"🔄 Task retried. New ID: `{new_task.task_id[:8]}`",
+        )
+
+    async def _handle_web(self, from_number: str, url: str) -> None:
+        """Fetch a URL and send the content summary."""
+        if not url:
+            await self._send_reply(from_number, "Usage: /web <url>")
+            return
+
+        await self._send_reply(from_number, f"_Fetching {url[:60]}..._")
+
+        try:
+            from hauba.tools.fetch import WebFetchTool
+
+            tool = WebFetchTool()
+            result = await tool.execute(url=url)
+            if result.success:
+                content = result.output[:1400]
+                await self._send_reply(from_number, content)
+            else:
+                await self._send_reply(from_number, f"Failed: {result.error}")
+        except Exception as exc:
+            await self._send_reply(from_number, f"Error fetching URL: {str(exc)[:200]}")
+
+    async def _handle_email(self, from_number: str, args: str) -> None:
+        """Send an email. Format: /email <to> <subject> | <body>"""
+        if not self._email_service or not self._email_service.is_configured:
+            await self._send_reply(
+                from_number,
+                "Email not configured. Server admin needs to set HAUBA_SMTP_* env vars.",
+            )
+            return
+
+        if not args:
+            await self._send_reply(
+                from_number,
+                "Usage: /email recipient@example.com Subject text | Body text",
+            )
+            return
+
+        # Parse: /email to@email.com subject here | body here
+        parts = args.split(None, 1)
+        to_addr = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
+
+        if "|" in rest:
+            subject, body = rest.split("|", 1)
+        else:
+            subject = rest
+            body = ""
+
+        subject = subject.strip() or "Message from Hauba"
+        body = body.strip() or subject
+
+        success = await self._email_service.send(to_addr, subject, body)
+        if success:
+            await self._send_reply(from_number, f"✅ Email sent to {to_addr}")
+        else:
+            await self._send_reply(from_number, "❌ Failed to send email. Check server logs.")
+
+    async def _handle_reply_cmd(self, from_number: str, args: str) -> None:
+        """Set or disable auto-reply."""
+        if not self._reply_assistant:
+            await self._send_reply(from_number, "Auto-reply service not available.")
+            return
+
+        if not args or args.lower() == "off":
+            await self._reply_assistant.set_enabled(False)
+            await self._send_reply(from_number, "Auto-reply disabled.")
+            return
+
+        await self._reply_assistant.set_auto_reply(args)
+        await self._reply_assistant.set_enabled(True)
+        await self._send_reply(from_number, f"✅ Auto-reply set: _{args[:100]}_")
+
+    async def _handle_usage(self, from_number: str) -> None:
+        """Show cost usage summary."""
+        if not self._task_queue:
+            await self._send_reply(from_number, "No usage data available.")
+            return
+
+        tasks = self._task_queue.get_owner_tasks(from_number)
+        total = len(tasks)
+        completed = sum(1 for t in tasks if t.status == "completed")
+        failed = sum(1 for t in tasks if t.status == "failed")
+        running = sum(1 for t in tasks if t.status in ("claimed", "running"))
+
+        msg = (
+            f"*Usage Summary*\n\n"
+            f"  Total tasks: {total}\n"
+            f"  Running: {running}\n"
+            f"  Completed: {completed}\n"
+            f"  Failed: {failed}\n"
+        )
+        await self._send_reply(from_number, msg)
+
+    async def _handle_plugins(self, from_number: str) -> None:
+        """List loaded plugins."""
+        if not self._plugin_registry:
+            await self._send_reply(from_number, "No plugins loaded.")
+            return
+
+        plugins = self._plugin_registry.list_plugins()
+        if not plugins:
+            await self._send_reply(from_number, "No plugins installed.")
+            return
+
+        lines = ["*Loaded Plugins*\n"]
+        for p in plugins:
+            lines.append(f"  • *{p['name']}* v{p['version']}")
+            if p["description"]:
+                lines.append(f"    _{p['description']}_")
+        await self._send_reply(from_number, "\n".join(lines))
+
+    async def _handle_feedback(self, from_number: str, args: str) -> None:
+        """Store user feedback."""
+        if not args:
+            await self._send_reply(from_number, "Usage: /feedback <your message>")
+            return
+
+        logger.info("whatsapp_bot.feedback", from_number=from_number, message=args[:200])
+        await self._send_reply(
+            from_number,
+            "Thank you for your feedback! 🙏\n"
+            "Visit github.com/NikeGunn/haubaa/issues for tracking.",
+        )
 
     async def _send_reply(self, to_number: str, text: str) -> None:
         """Send a WhatsApp reply via Twilio REST API."""

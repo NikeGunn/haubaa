@@ -114,3 +114,24 @@ EVENT_SKILL_MATCHED = "skill.matched"
 
 # Bundled skills directory (shipped inside the wheel)
 BUNDLED_SKILLS_DIR = Path(__file__).resolve().parent.parent / "bundled_skills"
+
+# Plugin system
+PLUGINS_DIR = HAUBA_HOME / "plugins"
+BUNDLED_PLUGINS_DIR = Path(__file__).resolve().parent.parent / "bundled_plugins"
+
+# Plugin events
+EVENT_PLUGIN_LOADED = "plugin.loaded"
+EVENT_PLUGIN_UNLOADED = "plugin.unloaded"
+EVENT_PLUGIN_ERROR = "plugin.error"
+
+# Email events
+EVENT_EMAIL_SENT = "email.sent"
+EVENT_EMAIL_FAILED = "email.failed"
+
+# Auto-reply events
+EVENT_AUTOREPLY_TRIGGERED = "autoreply.triggered"
+EVENT_AUTOREPLY_ENABLED = "autoreply.enabled"
+EVENT_AUTOREPLY_DISABLED = "autoreply.disabled"
+
+# Web fetch events
+EVENT_WEB_FETCH = "web.fetch"

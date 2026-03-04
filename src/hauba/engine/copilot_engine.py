@@ -591,6 +591,43 @@ Common packages by domain:
 - Web scraping: beautifulsoup4, requests, lxml
 - Automation: click, typer, schedule
 
+### WEB ACCESS (INTERNET BROWSING)
+
+You CAN access the internet. You have FULL web access through your tools. Use these approaches:
+
+1. **Web Search**: Use bash to search the web:
+   `curl -s "https://html.duckduckgo.com/html/" -d "q=your+search+query" | python3 -c "import sys,re; print(re.sub(r'<[^>]+>',' ',sys.stdin.read()))"`
+   Or use Python with httpx/requests for structured searches.
+
+2. **Fetch Web Pages**: Read any URL:
+   `curl -sL "https://example.com" | head -200`
+   Or use Python: `python3 -c "import httpx; r=httpx.get('URL'); print(r.text[:5000])"`
+
+3. **API Calls**: Make HTTP requests to any public API:
+   `curl -s "https://api.github.com/repos/owner/repo" | python3 -m json.tool`
+
+4. **Download Files**: Download assets, packages, data files:
+   `curl -LO "https://example.com/file.zip"` or `wget`
+
+5. **Research**: Look up documentation, Stack Overflow, GitHub repos before coding.
+
+ALWAYS research before implementing unfamiliar technologies. Use the internet to:
+- Look up API documentation and examples
+- Find best practices and patterns
+- Download dependencies and assets
+- Verify solutions against real documentation
+- Fetch data from URLs the user provides
+
+### PERSISTENT MEMORY
+
+You have persistent memory across tasks. Use the workspace directory to:
+- Write notes (e.g., `notes.md`) to remember context between conversations
+- Read previous notes to continue where you left off
+- Store learned patterns, API endpoints, and useful references
+- Keep a `TODO.md` for multi-session projects
+
+If you discover something important, write it down so you can reference it later.
+
 ### RULES
 
 - Always use the tools available to you (bash, files, git)
@@ -601,6 +638,7 @@ Common packages by domain:
 - Do NOT skip the verification step
 - When installing packages, use `pip install` in the workspace
 - For web apps, always include a README with setup instructions
+- USE THE INTERNET to research before building — don't guess
 """
         if self._skill_context:
             prompt += f"\n### SKILL GUIDANCE\n\n{self._skill_context}\n"

@@ -244,6 +244,57 @@ class TaskQueue:
         """Total number of tasks in the queue."""
         return len(self._tasks)
 
+    def cancel(self, task_id: str) -> bool:
+        """Cancel a queued or running task.
+
+        Returns True if cancelled, False if task not found or already terminal.
+        """
+        task = self._tasks.get(task_id)
+        if not task:
+            return False
+        if task.status in ("completed", "failed", "expired", "cancelled"):
+            return False
+
+        task.status = "cancelled"
+        task.completed_at = time.time()
+        logger.info("queue.task_cancelled", task_id=task_id)
+        return True
+
+    def retry(self, task_id: str) -> QueuedTask | None:
+        """Retry a failed/cancelled task by creating a new copy.
+
+        Returns the new task, or None if original not found or not retryable.
+        """
+        original = self._tasks.get(task_id)
+        if not original:
+            return None
+        if original.status not in ("failed", "cancelled", "expired"):
+            return None
+
+        return self.submit(
+            owner_id=original.owner_id,
+            instruction=original.instruction,
+            channel=original.channel,
+            channel_address=original.channel_address,
+            metadata=original.metadata,
+        )
+
+    def get_usage(self, owner_id: str) -> dict[str, Any]:
+        """Get usage statistics for an owner.
+
+        Returns a summary dict with task counts and estimated cost.
+        """
+        tasks = self.get_owner_tasks(owner_id)
+        return {
+            "total_tasks": len(tasks),
+            "completed": sum(1 for t in tasks if t.status == "completed"),
+            "failed": sum(1 for t in tasks if t.status == "failed"),
+            "running": sum(1 for t in tasks if t.status in ("claimed", "running")),
+            "queued": sum(1 for t in tasks if t.status == "queued"),
+            "cancelled": sum(1 for t in tasks if t.status == "cancelled"),
+            "estimated_cost": 0.0,  # Placeholder — daemon tracks actual cost
+        }
+
     def _expire_stale_tasks(self) -> None:
         """Mark old unclaimed tasks as expired."""
         now = time.time()

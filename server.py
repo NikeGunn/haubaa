@@ -135,7 +135,7 @@ def create_server_app():
             "AI Software Engineer as a Service. BYOK — bring your own API key. "
             "Powered by GitHub Copilot SDK."
         ),
-        version="0.5.0",
+        version="0.6.0",
         docs_url="/docs",
         redoc_url="/redoc",
     )
@@ -430,6 +430,35 @@ def create_server_app():
                 for t in tasks
             ]
 
+        @app.post("/api/v1/queue/{task_id}/cancel", include_in_schema=False)
+        async def queue_cancel(task_id: str):
+            """Cancel a queued or running task."""
+            cancelled = _task_queue.cancel(task_id)
+            if not cancelled:
+                from fastapi import HTTPException
+
+                raise HTTPException(404, "Task not found or already terminal")
+            return {"task_id": task_id, "status": "cancelled"}
+
+        @app.post("/api/v1/queue/{task_id}/retry", include_in_schema=False)
+        async def queue_retry(task_id: str):
+            """Retry a failed/cancelled task."""
+            new_task = _task_queue.retry(task_id)
+            if not new_task:
+                from fastapi import HTTPException
+
+                raise HTTPException(404, "Task not found or not retryable")
+            return {
+                "task_id": new_task.task_id,
+                "status": new_task.status,
+                "message": "Task retried.",
+            }
+
+        @app.get("/api/v1/queue/{owner_id}/usage", include_in_schema=False)
+        async def queue_usage(owner_id: str):
+            """Get usage statistics for an owner."""
+            return _task_queue.get_usage(owner_id)
+
         print("[hauba] Task queue endpoints loaded (Queue + Poll architecture).")
     except ImportError as e:
         _task_queue = None  # type: ignore[assignment]
@@ -443,6 +472,39 @@ def create_server_app():
         _wa_enabled = _wa_bot.configure()
 
         if _wa_enabled:
+            # Wire services to WhatsApp bot
+            try:
+                from hauba.services.email import EmailService
+
+                _email_svc = EmailService()
+                if _email_svc.configure():
+                    _wa_bot._email_service = _email_svc
+                    print("[hauba] Email service wired to WhatsApp bot.")
+            except ImportError:
+                pass
+
+            try:
+                from hauba.services.reply_assistant import ReplyAssistant
+
+                _reply_assistant = ReplyAssistant()
+                _wa_bot._reply_assistant = _reply_assistant
+                print("[hauba] Reply assistant wired to WhatsApp bot.")
+            except ImportError:
+                pass
+
+            try:
+                from hauba.plugins import PluginLoader, PluginRegistry
+
+                _plugin_registry = PluginRegistry()
+                _plugin_loader = PluginLoader()
+                for _p in _plugin_loader.load_all():
+                    _plugin_registry.register(_p)
+                if _plugin_registry.plugin_count > 0:
+                    _wa_bot._plugin_registry = _plugin_registry
+                    print(f"[hauba] {_plugin_registry.plugin_count} plugin(s) loaded.")
+            except ImportError:
+                pass
+
             # Wire task queue to WhatsApp bot for completion notifications
             if _task_queue is not None:
                 _wa_bot.set_task_queue(_task_queue)

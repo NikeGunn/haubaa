@@ -164,3 +164,37 @@ class ComposeConfig(BaseModel):
     settings: ComposeSettings = Field(default_factory=ComposeSettings)
     agents: dict[str, ComposeAgentConfig] = Field(default_factory=dict)
     output: str = "./output"
+
+
+# --- V4.0 Types ---
+
+
+class WebFetchResult(BaseModel):
+    """Result of fetching a web page."""
+
+    url: str
+    title: str = ""
+    content: str = ""
+    status_code: int = 0
+    fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class PluginHook(str, Enum):
+    """Hook types for the plugin system."""
+
+    ON_MESSAGE = "on_message"
+    ON_TASK_COMPLETE = "on_task_complete"
+    ON_TASK_QUEUED = "on_task_queued"
+    ON_STARTUP = "on_startup"
+    ON_SHUTDOWN = "on_shutdown"
+
+
+class EmailMessage(BaseModel):
+    """An email message to send on owner's behalf."""
+
+    to: str
+    subject: str
+    body: str
+    cc: str = ""
+    bcc: str = ""
+    reply_to: str = ""

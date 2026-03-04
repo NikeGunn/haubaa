@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS memory (
     value TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    expires_at TEXT,
     UNIQUE(namespace, key)
 );
 
@@ -149,3 +150,106 @@ class MemoryStore:
                 }
                 for r in rows
             ]
+
+    # --- V4.0: KV Cache with TTL + Compaction ---
+
+    async def set_with_ttl(self, namespace: str, key: str, value: str, ttl_seconds: int) -> None:
+        """Set a memory value with a time-to-live in seconds."""
+        db = await self._ensure_db()
+        now = datetime.now(UTC)
+        expires_at = datetime.fromtimestamp(now.timestamp() + ttl_seconds, tz=UTC).isoformat()
+        now_iso = now.isoformat()
+        await db.execute(
+            "INSERT INTO memory (namespace, key, value, created_at, updated_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(namespace, key) DO UPDATE SET value=?, updated_at=?, expires_at=?",
+            (namespace, key, value, now_iso, now_iso, expires_at, value, now_iso, expires_at),
+        )
+        await db.commit()
+
+    async def get_or_default(self, namespace: str, key: str, default: str = "") -> str:
+        """Get a memory value, returning default if not found or expired."""
+        await self._cleanup_expired()
+        value = await self.get(namespace, key)
+        return value if value is not None else default
+
+    async def list_values(self, namespace: str) -> list[dict[str, str]]:
+        """List all key-value pairs in a namespace."""
+        await self._cleanup_expired()
+        db = await self._ensure_db()
+        async with db.execute(
+            "SELECT key, value FROM memory WHERE namespace=? ORDER BY updated_at DESC",
+            (namespace,),
+        ) as cursor:
+            return [{"key": row[0], "value": row[1]} async for row in cursor]
+
+    async def delete(self, namespace: str, key: str) -> None:
+        """Delete a specific key from a namespace."""
+        db = await self._ensure_db()
+        await db.execute(
+            "DELETE FROM memory WHERE namespace=? AND key=?",
+            (namespace, key),
+        )
+        await db.commit()
+
+    async def compact(self, namespace: str, max_entries: int = 1000) -> int:
+        """Prune oldest entries in a namespace, keeping at most max_entries.
+
+        Returns the number of entries removed.
+        """
+        db = await self._ensure_db()
+        # First clean expired
+        await self._cleanup_expired()
+        # Count current entries
+        async with db.execute(
+            "SELECT COUNT(*) FROM memory WHERE namespace=?",
+            (namespace,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            count = row[0] if row else 0
+
+        if count <= max_entries:
+            return 0
+
+        to_remove = count - max_entries
+        await db.execute(
+            "DELETE FROM memory WHERE id IN ("
+            "  SELECT id FROM memory WHERE namespace=? "
+            "  ORDER BY updated_at ASC LIMIT ?"
+            ")",
+            (namespace, to_remove),
+        )
+        await db.commit()
+        logger.info("memory.compacted", namespace=namespace, removed=to_remove)
+        return to_remove
+
+    async def get_stats(self) -> dict[str, int]:
+        """Get entry counts per namespace."""
+        db = await self._ensure_db()
+        async with db.execute(
+            "SELECT namespace, COUNT(*) FROM memory GROUP BY namespace ORDER BY namespace",
+        ) as cursor:
+            return {row[0]: row[1] async for row in cursor}
+
+    async def _cleanup_expired(self) -> int:
+        """Delete entries past their TTL. Returns count removed."""
+        db = await self._ensure_db()
+        now = datetime.now(UTC).isoformat()
+        cursor = await db.execute(
+            "DELETE FROM memory WHERE expires_at IS NOT NULL AND expires_at < ?",
+            (now,),
+        )
+        removed = cursor.rowcount
+        if removed:
+            await db.commit()
+        return removed
+
+    async def _ensure_expires_column(self) -> None:
+        """Add expires_at column if it doesn't exist (migration)."""
+        db = await self._ensure_db()
+        try:
+            await db.execute("SELECT expires_at FROM memory LIMIT 1")
+        except Exception:
+            await db.execute("ALTER TABLE memory ADD COLUMN expires_at TEXT")
+            await db.commit()
+            logger.info("memory.migrated", added_column="expires_at")

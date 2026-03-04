@@ -27,3 +27,10 @@ try:
     __all__.append("WebSearchTool")
 except Exception:
     WebSearchTool = None  # type: ignore[assignment,misc]
+
+try:
+    from hauba.tools.fetch import WebFetchTool
+
+    __all__.append("WebFetchTool")
+except Exception:
+    WebFetchTool = None  # type: ignore[assignment,misc]
