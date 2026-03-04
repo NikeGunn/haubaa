@@ -135,7 +135,7 @@ def create_server_app():
             "AI Software Engineer as a Service. BYOK — bring your own API key. "
             "Powered by GitHub Copilot SDK."
         ),
-        version="0.6.0",
+        version="0.7.0",
         docs_url="/docs",
         redoc_url="/redoc",
     )

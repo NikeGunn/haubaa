@@ -33,8 +33,10 @@ from typing import Any
 
 import httpx
 import structlog
+from rich.console import Console
 
 logger = structlog.get_logger()
+_console = Console()
 
 # Default polling interval (seconds)
 DEFAULT_POLL_INTERVAL = 10.0
@@ -56,6 +58,13 @@ COST_PER_1K_TOKENS = {
 
 # Default cost alert threshold (USD per task)
 DEFAULT_COST_ALERT_THRESHOLD = 5.0
+
+# Maximum retries for reporting completion to server
+COMPLETION_REPORT_RETRIES = 3
+COMPLETION_REPORT_RETRY_DELAY = 5.0
+
+# How often to check if a task has been cancelled on the server
+CANCELLATION_CHECK_INTERVAL = 30.0
 
 
 class HaubaDaemon:
@@ -88,6 +97,7 @@ class HaubaDaemon:
         self._running = False
         self._active_tasks: dict[str, asyncio.Task[None]] = {}
         self._http: httpx.AsyncClient | None = None
+        self._cancelled_tasks: set[str] = set()
 
         # Cost tracking — estimates based on tool calls
         self._session_cost: float = 0.0
@@ -113,7 +123,7 @@ class HaubaDaemon:
         self._http = httpx.AsyncClient(
             base_url=self._server_url,
             timeout=30.0,
-            headers={"User-Agent": "hauba-agent/0.6.0"},
+            headers={"User-Agent": "hauba-agent/0.7.0"},
         )
 
         logger.info(
@@ -129,6 +139,7 @@ class HaubaDaemon:
                     await self._poll_and_execute()
                 except Exception as exc:
                     logger.error("daemon.poll_error", error=str(exc))
+                    _console.print(f"  [red]Poll error: {exc}[/red]")
 
                 await asyncio.sleep(self._poll_interval)
         finally:
@@ -185,10 +196,15 @@ class HaubaDaemon:
                     continue
 
                 # Claim the task
+                _console.print(
+                    f"  [cyan]Found task:[/cyan] {task_data.get('instruction', '')[:80]}"
+                )
                 claimed = await self._claim_task(task_id)
                 if not claimed:
+                    _console.print(f"  [yellow]Could not claim task {task_id[:8]}[/yellow]")
                     continue
 
+                _console.print(f"  [green]Claimed task {task_id[:8]} — executing...[/green]")
                 # Execute in background
                 self._active_tasks[task_id] = asyncio.create_task(self._execute_task(task_data))
 
@@ -196,6 +212,7 @@ class HaubaDaemon:
             logger.debug("daemon.server_unreachable", server=self._server_url)
         except Exception as exc:
             logger.error("daemon.poll_error", error=str(exc))
+            _console.print(f"  [red]Poll error: {exc}[/red]")
 
     async def _claim_task(self, task_id: str) -> bool:
         """Claim a task on the server."""
@@ -294,14 +311,26 @@ class HaubaDaemon:
 
         unsub = engine.on_event(_track_cost)
 
-        # Start progress reporter
+        # Start progress reporter (also checks for cancellation)
         stop_progress = asyncio.Event()
         progress_task = asyncio.create_task(self._report_progress_loop(task_id, stop_progress))
 
         try:
-            # No timeout — daemon runs autonomously 24/7
-            # The engine itself has infinite sessions with auto-compaction
+            # Check if cancelled before we even start
+            if task_id in self._cancelled_tasks:
+                _console.print(
+                    f"  [yellow]Task {task_id[:8]} was cancelled before execution[/yellow]"
+                )
+                return
+
             result = await engine.execute(instruction, timeout=3600.0)
+
+            # Check if cancelled during execution
+            if task_id in self._cancelled_tasks:
+                _console.print(
+                    f"  [yellow]Task {task_id[:8]} was cancelled during execution[/yellow]"
+                )
+                return
 
             task_cost = self._task_costs.get(task_id, 0)
 
@@ -314,6 +343,10 @@ class HaubaDaemon:
             if task_cost > 0.01:
                 output += f"\n\n_Estimated cost: ${task_cost:.2f}_"
 
+            _console.print(
+                f"  [green]Task {task_id[:8]} {'completed' if result.success else 'failed'}[/green]"
+            )
+
             await self._report_completion(
                 task_id=task_id,
                 output=output,
@@ -323,6 +356,7 @@ class HaubaDaemon:
 
         except Exception as exc:
             logger.error("daemon.task_error", task_id=task_id, error=str(exc))
+            _console.print(f"  [red]Task {task_id[:8]} error: {exc}[/red]")
             await self._report_completion(
                 task_id=task_id,
                 output="",
@@ -339,22 +373,37 @@ class HaubaDaemon:
                 pass
             await engine.stop()
             self._active_tasks.pop(task_id, None)
+            self._cancelled_tasks.discard(task_id)
 
     async def _report_progress_loop(self, task_id: str, stop: asyncio.Event) -> None:
-        """Periodically report progress to the server."""
+        """Periodically report progress and check for cancellation."""
         elapsed = 0.0
+        cancel_check_elapsed = 0.0
         while not stop.is_set():
             try:
                 await asyncio.wait_for(stop.wait(), timeout=PROGRESS_REPORT_INTERVAL)
                 return
             except TimeoutError:
                 elapsed += PROGRESS_REPORT_INTERVAL
+                cancel_check_elapsed += PROGRESS_REPORT_INTERVAL
                 minutes = int(elapsed // 60)
                 seconds = int(elapsed % 60)
                 cost = self._task_costs.get(task_id, 0)
                 cost_str = f" | ~${cost:.2f}" if cost > 0.01 else ""
                 progress = f"Working... ({minutes}m {seconds}s{cost_str})"
                 await self._report_progress(task_id, progress)
+
+                # Periodically check if task was cancelled on the server
+                if cancel_check_elapsed >= CANCELLATION_CHECK_INTERVAL:
+                    cancel_check_elapsed = 0.0
+                    if await self._is_task_cancelled(task_id):
+                        self._cancelled_tasks.add(task_id)
+                        _console.print(f"  [yellow]Task {task_id[:8]} cancelled by server[/yellow]")
+                        # Cancel the execution task
+                        active = self._active_tasks.get(task_id)
+                        if active:
+                            active.cancel()
+                        return
 
     async def _report_progress(self, task_id: str, progress: str) -> None:
         """Report progress for a task to the server."""
@@ -368,6 +417,24 @@ class HaubaDaemon:
         except Exception:
             pass  # Non-critical
 
+    async def _is_task_cancelled(self, task_id: str) -> bool:
+        """Check if a task was cancelled on the server."""
+        if not self._http:
+            return False
+        try:
+            # Use the owner's status endpoint to check task state
+            resp = await self._http.get(
+                f"/api/v1/queue/{self._owner_id}/status",
+            )
+            if resp.status_code == 200:
+                tasks = resp.json()
+                for t in tasks:
+                    if t.get("task_id", "").startswith(task_id[:8]) or t.get("task_id") == task_id:
+                        return t.get("status") == "cancelled"
+        except Exception:
+            pass
+        return False
+
     async def _report_completion(
         self,
         task_id: str,
@@ -375,36 +442,56 @@ class HaubaDaemon:
         success: bool,
         error: str,
     ) -> None:
-        """Report task completion to the server."""
+        """Report task completion to the server with retry logic."""
         if not self._http:
             return
-        try:
-            resp = await self._http.post(
-                f"/api/v1/queue/{task_id}/complete",
-                json={
-                    "output": output[:4000],  # Cap output size
-                    "success": success,
-                    "error": error[:500],
-                },
-            )
-            if resp.status_code == 200:
-                logger.info(
-                    "daemon.task_reported",
-                    task_id=task_id,
-                    success=success,
+
+        for attempt in range(COMPLETION_REPORT_RETRIES):
+            try:
+                resp = await self._http.post(
+                    f"/api/v1/queue/{task_id}/complete",
+                    json={
+                        "output": output[:4000],  # Cap output size
+                        "success": success,
+                        "error": error[:500],
+                    },
                 )
-            else:
+                if resp.status_code == 200:
+                    logger.info(
+                        "daemon.task_reported",
+                        task_id=task_id,
+                        success=success,
+                    )
+                    _console.print(
+                        f"  [green]Reported {'success' if success else 'failure'} "
+                        f"for task {task_id[:8]}[/green]"
+                    )
+                    return
                 logger.warning(
                     "daemon.report_failed",
                     task_id=task_id,
                     status=resp.status_code,
+                    attempt=attempt + 1,
                 )
-        except Exception as exc:
-            logger.error(
-                "daemon.report_error",
-                task_id=task_id,
-                error=str(exc),
-            )
+            except Exception as exc:
+                logger.error(
+                    "daemon.report_error",
+                    task_id=task_id,
+                    error=str(exc),
+                    attempt=attempt + 1,
+                )
+
+            if attempt < COMPLETION_REPORT_RETRIES - 1:
+                _console.print(
+                    f"  [yellow]Retry {attempt + 2}/{COMPLETION_REPORT_RETRIES} "
+                    f"reporting task {task_id[:8]}...[/yellow]"
+                )
+                await asyncio.sleep(COMPLETION_REPORT_RETRY_DELAY)
+
+        _console.print(
+            f"  [red]Failed to report task {task_id[:8]} after "
+            f"{COMPLETION_REPORT_RETRIES} attempts[/red]"
+        )
 
     async def _send_cost_alert(self, task_id: str, instruction: str, cost: float) -> None:
         """Notify the owner when a task exceeds the cost threshold.

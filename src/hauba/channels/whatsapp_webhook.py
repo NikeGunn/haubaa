@@ -341,6 +341,42 @@ class WhatsAppBot:
         if len(lower) < 15:
             return False
 
+        # Exclude messages that look like task management / status inquiries
+        # These contain task IDs (8-char hex), status emojis, or task commands
+        management_keywords = [
+            "cancel",
+            "check",
+            "/tasks",
+            "/status",
+            "/cancel",
+            "/retry",
+            "task id",
+            "your tasks",
+            "my tasks",
+            "running check",
+            "is running",
+            "still running",
+            "stop it",
+            "stop task",
+            "kill task",
+            "abort",
+        ]
+        if any(mk in lower for mk in management_keywords):
+            return False
+
+        # Exclude messages that contain status emojis (likely quoting task list)
+        status_emojis = [
+            "\u23f3",
+            "\U0001f504",
+            "\u26a1",
+            "\u2705",
+            "\u274c",
+            "\u23f0",
+            "\U0001f6ab",
+        ]
+        if any(e in body for e in status_emojis):
+            return False
+
         # Build keywords
         build_keywords = [
             "build",
@@ -445,11 +481,14 @@ class WhatsAppBot:
             "completed": "✅",
             "failed": "❌",
             "expired": "⏰",
+            "cancelled": "🚫",
         }
         for t in tasks[-5:]:  # Show last 5
             emoji = status_emoji.get(t.status, "❓")
             line = f"{emoji} {t.instruction[:60]}"
-            if t.progress:
+            if t.status in ("cancelled", "completed", "failed", "expired"):
+                line += f"\n   _{t.status.capitalize()}_"
+            elif t.progress:
                 line += f"\n   _{t.progress}_"
             lines.append(line)
 
@@ -585,7 +624,9 @@ class WhatsAppBot:
             emoji = status_emoji.get(t.status, "❓")
             tid = t.task_id[:8]
             line = f"{emoji} `{tid}` {t.instruction[:50]}"
-            if t.progress:
+            if t.status in ("cancelled", "completed", "failed", "expired"):
+                line += f"\n   _{t.status.capitalize()}_"
+            elif t.progress:
                 line += f"\n   _{t.progress[:60]}_"
             lines.append(line)
 

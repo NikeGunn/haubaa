@@ -30,6 +30,9 @@ logger = structlog.get_logger()
 # Tasks expire if unclaimed after 1 hour
 TASK_TTL = 3600.0
 
+# Claimed/running tasks expire if no progress for 30 minutes
+CLAIM_TIMEOUT = 1800.0
+
 # Maximum queued tasks per owner to prevent abuse
 MAX_QUEUED_PER_OWNER = 10
 
@@ -41,10 +44,11 @@ class QueuedTask:
     task_id: str
     owner_id: str
     instruction: str
-    status: str = "queued"  # queued, claimed, running, completed, failed, expired
+    status: str = "queued"  # queued, claimed, running, completed, failed, expired, cancelled
     created_at: float = 0.0
     claimed_at: float | None = None
     completed_at: float | None = None
+    last_progress_at: float | None = None  # Track when progress was last updated
     progress: str = ""
     output: str = ""
     error: str = ""
@@ -176,6 +180,7 @@ class TaskQueue:
 
         task.status = "running"
         task.progress = progress
+        task.last_progress_at = time.time()
         return True
 
     async def complete(
@@ -230,6 +235,7 @@ class TaskQueue:
 
     def get_owner_tasks(self, owner_id: str) -> list[QueuedTask]:
         """Get all tasks for an owner (any status)."""
+        self._expire_stale_tasks()
         return [t for t in self._tasks.values() if t.owner_id == owner_id]
 
     def clear_owner(self, owner_id: str) -> int:
@@ -257,6 +263,7 @@ class TaskQueue:
 
         task.status = "cancelled"
         task.completed_at = time.time()
+        task.progress = "Cancelled"
         logger.info("queue.task_cancelled", task_id=task_id)
         return True
 
@@ -296,9 +303,22 @@ class TaskQueue:
         }
 
     def _expire_stale_tasks(self) -> None:
-        """Mark old unclaimed tasks as expired."""
+        """Mark old unclaimed tasks as expired and recover stale claimed/running tasks."""
         now = time.time()
         for task in self._tasks.values():
             if task.status == "queued" and (now - task.created_at) > TASK_TTL:
                 task.status = "expired"
                 logger.debug("queue.task_expired", task_id=task.task_id)
+            # Recover stale claimed/running tasks (daemon crashed)
+            elif task.status in ("claimed", "running"):
+                last_activity = task.last_progress_at or task.claimed_at or task.created_at
+                if (now - last_activity) > CLAIM_TIMEOUT:
+                    task.status = "failed"
+                    task.completed_at = now
+                    task.error = "Task stalled — agent stopped responding"
+                    task.progress = "Failed (agent timeout)"
+                    logger.info(
+                        "queue.task_stale_recovered",
+                        task_id=task.task_id,
+                        stale_seconds=int(now - last_activity),
+                    )
