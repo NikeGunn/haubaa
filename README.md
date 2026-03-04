@@ -1,10 +1,8 @@
 <p align="center">
   <br>
-  <br>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/hauba-AI%20Workstation-6C5CE7?style=for-the-badge&labelColor=1e1e2e&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNhNmUzYTEiIHN0cm9rZS13aWR0aD0iMiI+PHBhdGggZD0iTTEyIDJMMyA3djEwbDkgNSA5LTV2LTEweiIvPjxwYXRoIGQ9Ik0xMiAyMlYxMiIvPjxwYXRoIGQ9Ik0xMiAxMkwzIDciLz48cGF0aCBkPSJNMTIgMTJsMjEgNyIvPjwvc3ZnPg==">
-    <img alt="Hauba" src="https://img.shields.io/badge/hauba-AI%20Workstation-6C5CE7?style=for-the-badge&labelColor=f5f5f5&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM2QzVDRTciIHN0cm9rZS13aWR0aD0iMiI+PHBhdGggZD0iTTEyIDJMMyA3djEwbDkgNSA5LTV2LTEweiIvPjxwYXRoIGQ9Ik0xMiAyMlYxMiIvPjxwYXRoIGQ9Ik0xMiAxMkwzIDciLz48cGF0aCBkPSJNMTIgMTJsMjEgNyIvPjwvc3ZnPg==">
-  </picture>
+  <a href="https://hauba.tech">
+    <img src="https://raw.githubusercontent.com/NikeGunn/admin_-their_assets/master/hauba/hauba.png" alt="Hauba" width="280">
+  </a>
   <br>
   <br>
 </p>
