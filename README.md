@@ -1,127 +1,150 @@
 <div align="center">
 
-# Hauba
+<br>
 
-### The AI Workstation That Builds While You Sleep
+# `hauba`
 
-**One command. Full engineering team. Your API key. Your machine.**
+<br>
+
+### Stop hiring engineers. Start shipping products.
+
+An AI engineering company in your terminal. Not a chatbot.
+
+<br>
 
 [![CI](https://github.com/NikeGunn/haubaa/actions/workflows/ci.yml/badge.svg)](https://github.com/NikeGunn/haubaa/actions)
-[![PyPI](https://img.shields.io/pypi/v/hauba.svg?color=blue)](https://pypi.org/project/hauba/)
-[![Python](https://img.shields.io/pypi/pyversions/hauba.svg)](https://pypi.org/project/hauba/)
-[![License](https://img.shields.io/github/license/NikeGunn/haubaa.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-432%20passed-brightgreen)]()
-[![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey)]()
+[![PyPI](https://img.shields.io/pypi/v/hauba.svg?color=6C5CE7&style=flat-square)](https://pypi.org/project/hauba/)
+[![Python](https://img.shields.io/pypi/pyversions/hauba.svg?style=flat-square)](https://pypi.org/project/hauba/)
+[![License](https://img.shields.io/github/license/NikeGunn/haubaa.svg?style=flat-square)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-432%20passed-4caf50?style=flat-square)]()
+[![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-6C5CE7?style=flat-square)]()
 
 <br>
 
-[Get Started](#-get-started) · [See It In Action](#-see-it-in-action) · [Features](#-features) · [Architecture](#-architecture) · [Docs](#-full-cli-reference)
+**Your competitors are hiring for 6 months. You ship today.**
 
 <br>
 
 ```
-pip install hauba && hauba init && hauba run "build me a SaaS"
+pip install hauba
 ```
+
+<br>
+
+[See It Work](#-see-it-work) &nbsp;&nbsp; [Get Started](#-get-started) &nbsp;&nbsp; [Why Hauba](#-why-hauba) &nbsp;&nbsp; [Features](#-core-capabilities) &nbsp;&nbsp; [Architecture](#-architecture)
+
+<br>
+
+</div>
+
+---
+
+<br>
+
+One command deploys an AI engineering team that plans, codes, tests, debugs, and delivers — while you sleep. Powered by the same Copilot SDK backbone used by GitHub. Not a wrapper. The real thing.
+
+Your API key. Your machine. Zero platform cost. **We call this BYOK.**
+
+```bash
+hauba init                                    # 30-second setup
+hauba run "build a SaaS with auth and billing"  # ship it
+```
+
+<br>
+
+---
+
+<br>
+
+<div align="center">
+
+## See It Work
 
 </div>
 
 <br>
 
----
-
-<br>
-
-## What is Hauba?
-
-Hauba is a **production-grade AI workstation** that turns natural language into real software, data pipelines, ML models, video edits, and more.
-
-It's not a chatbot. It's not a wrapper. It's an **autonomous engineering agent** powered by the GitHub Copilot SDK — with a zero-hallucination verification layer, 17 domain skills, multi-channel access, and a 24/7 daemon that builds while you're away.
-
-**The key insight:** Your AI agent should run on **your machine**, with **your API key**, at **your cost**. The server is just a message queue. We call this **BYOK** — Bring Your Own Key.
-
-```
-You (WhatsApp) → "build me an API with auth"
-                        ↓
-              Server queues the task
-                        ↓
-        Your machine picks it up automatically
-                        ↓
-         Builds it with YOUR Claude/GPT key
-                        ↓
-            Notifies you when it's done ✓
-```
-
-<br>
-
----
-
-<br>
-
-## See It In Action
-
 <table>
 <tr>
 <td width="50%" align="center">
+<br>
 
-**Run a task**
+**Ship a product**
 
-<img src="assets/hauba-run.gif" alt="hauba run demo" width="100%">
+<img src="assets/hauba-run.gif" alt="hauba run" width="100%">
 
-`hauba run "build a REST API with auth"`<br>
-<sub>Think → Plan → Execute → Verify → Deliver</sub>
+```
+hauba run "build a REST API with auth"
+```
 
+<sub>Think &rarr; Plan &rarr; Execute &rarr; Verify &rarr; Deliver</sub>
+<br><br>
 </td>
 <td width="50%" align="center">
+<br>
 
-**Setup in 30 seconds**
+**30-second setup**
 
-<img src="assets/hauba-init.gif" alt="hauba init demo" width="100%">
+<img src="assets/hauba-init.gif" alt="hauba init" width="100%">
 
-`hauba init`<br>
-<sub>Pick provider → Enter key → Ready</sub>
+```
+hauba init
+```
 
-</td>
-</tr>
-<tr>
-<td width="50%" align="center">
-
-**24/7 Daemon Agent**
-
-<img src="assets/hauba-agent.gif" alt="hauba agent demo" width="100%">
-
-`hauba agent --server https://hauba.tech`<br>
-<sub>Auto-polls → Claims → Builds → Notifies</sub>
-
-</td>
-<td width="50%" align="center">
-
-**WhatsApp Bot**
-
-<img src="assets/hauba-whatsapp.gif" alt="whatsapp bot demo" width="100%">
-
-<sub>Message your bot → Task queued → Built locally → Results on phone</sub>
-
+<sub>Pick provider &rarr; Paste key &rarr; Ship</sub>
+<br><br>
 </td>
 </tr>
 <tr>
 <td width="50%" align="center">
+<br>
 
-**Declarative AI Teams**
+**24/7 autonomous agent**
 
-<img src="assets/hauba-compose.gif" alt="hauba compose demo" width="100%">
+<img src="assets/hauba-agent.gif" alt="hauba agent" width="100%">
 
-`hauba compose up "build a SaaS"`<br>
-<sub>Architect → Backend ∥ Frontend → DevOps</sub>
+```
+hauba agent --server https://hauba.tech
+```
 
+<sub>Polls &rarr; Claims &rarr; Builds &rarr; Notifies you on phone</sub>
+<br><br>
 </td>
 <td width="50%" align="center">
+<br>
 
-**Queue + Poll Architecture**
+**Command from WhatsApp**
 
-<img src="assets/hauba-architecture.gif" alt="architecture demo" width="100%">
+<img src="assets/hauba-whatsapp.gif" alt="whatsapp" width="100%">
 
-<sub>Your machine ↔ Server relay ↔ Channels</sub>
+<sub>Text your bot &rarr; Task queued &rarr; Built on your machine &rarr; Done</sub>
+<br><br>
+</td>
+</tr>
+<tr>
+<td width="50%" align="center">
+<br>
 
+**Compose AI teams**
+
+<img src="assets/hauba-compose.gif" alt="hauba compose" width="100%">
+
+```
+hauba compose up "build a SaaS"
+```
+
+<sub>Architect &rarr; Backend &#8741; Frontend &rarr; DevOps</sub>
+<br><br>
+</td>
+<td width="50%" align="center">
+<br>
+
+**Queue + Poll architecture**
+
+<img src="assets/hauba-architecture.gif" alt="architecture" width="100%">
+
+<sub>Your machine &harr; Server relay &harr; Any channel</sub>
+<br><br>
 </td>
 </tr>
 </table>
@@ -132,62 +155,81 @@ You (WhatsApp) → "build me an API with auth"
 
 <br>
 
+<div align="center">
+
 ## Get Started
 
-### Install
+**One command. No Docker, Redis, or Kubernetes.**
+
+</div>
+
+<br>
 
 ```bash
 pip install hauba
 ```
 
 <details>
-<summary><strong>More install options</strong></summary>
+<summary>&nbsp;&nbsp;<strong>macOS / Linux one-liner</strong></summary>
 
 ```bash
-# One-liner (Linux/macOS)
 curl -fsSL https://hauba.tech/install.sh | sh
+```
 
-# One-liner (Windows PowerShell)
-irm https://hauba.tech/install.ps1 | iex
+</details>
 
-# From source
+<details>
+<summary>&nbsp;&nbsp;<strong>Windows PowerShell</strong></summary>
+
+```powershell
+irm hauba.tech/install.ps1 | iex
+```
+
+</details>
+
+<details>
+<summary>&nbsp;&nbsp;<strong>From source</strong></summary>
+
+```bash
 git clone https://github.com/NikeGunn/haubaa.git && cd haubaa
 pip install -e ".[dev]"
+```
 
-# With extras
+</details>
+
+<details>
+<summary>&nbsp;&nbsp;<strong>Optional extras</strong></summary>
+
+```bash
 pip install hauba[all]            # Everything
-pip install hauba[computer-use]   # Browser + screen control
+pip install hauba[computer-use]   # Browser + screen automation
 pip install hauba[voice]          # Voice mode (Whisper + TTS)
-pip install hauba[web]            # Web dashboard
+pip install hauba[web]            # Web dashboard (FastAPI)
 pip install hauba[channels]       # WhatsApp, Telegram, Discord
 pip install hauba[services]       # Email (SMTP)
 ```
 
 </details>
 
-**Requirements:** Python 3.11+ — nothing else.
+**Requirements:** Python 3.11+ — that's it.
 
-### Initialize
+<br>
 
-```bash
-hauba init
-```
-
-Choose your LLM provider, enter your API key, and you're ready.
-
-### Run your first task
+### Three commands to production
 
 ```bash
-hauba run "create a REST API with JWT auth, database models, and full test suite"
+hauba init                          # pick your LLM, paste your key
+hauba run "your task in plain English"   # agent plans, you approve, it ships
+hauba doctor                        # verify everything works
 ```
 
-The engine **thinks before it acts** — plans the approach, shows you for approval, executes with real tools (bash, files, git, web), verifies everything passes, then delivers.
+The engine **thinks before it acts.** Plans the approach. Shows you for approval. Builds with real tools — bash, files, git, web, browser. Runs your tests. Verifies output on disk. Then delivers.
 
-The session stays open for multi-turn follow-ups:
+Session stays open. Keep going:
 
 ```
 > "add rate limiting and CORS"
-> "write a Dockerfile for production"
+> "write a Dockerfile"
 > "deploy to Railway"
 ```
 
@@ -197,67 +239,118 @@ The session stays open for multi-turn follow-ups:
 
 <br>
 
-## Features
+<div align="center">
 
-### BYOK — Bring Your Own Key
+## Why Hauba
 
-Your API key never leaves your machine. The server is a stateless relay. You control cost, model, and provider.
+</div>
 
-| Provider | Models | Offline |
-|----------|--------|---------|
-| **Anthropic** | Claude Opus 4.6, Sonnet 4.5, Haiku 4.5 | No |
-| **OpenAI** | GPT-4o, o3 | No |
-| **Azure** | Any Azure OpenAI deployment | No |
-| **Ollama** | Qwen 2.5 Coder 32B, Llama 3, any local model | **Yes** |
+<br>
 
-```bash
-hauba config llm.provider anthropic
-hauba config llm.model claude-sonnet-4-5-20250929
-```
+<table>
+<tr>
+<td width="33%" align="center">
+<br>
+<h3>Enterprise-Grade Engine</h3>
+<p>The same GitHub Copilot SDK production runtime. Not a wrapper around ChatGPT. The real agentic backbone — battle-tested, production-hardened.</p>
+<br>
+</td>
+<td width="33%" align="center">
+<br>
+<h3>BYOK — Zero Platform Cost</h3>
+<p>Bring Claude, GPT-4, or run Ollama locally for free. Your key never leaves your machine. Server owner pays nothing. You control every dollar.</p>
+<br>
+</td>
+<td width="33%" align="center">
+<br>
+<h3>Air-Gap Ready</h3>
+<p>100% offline with Ollama. No telemetry. No phone-home. Run it in a classified environment, on a submarine, in a bunker. It doesn't care.</p>
+<br>
+</td>
+</tr>
+<tr>
+<td width="33%" align="center">
+<br>
+<h3>17 Domain Skills</h3>
+<p>Full-stack, ML, video editing, DevOps, security hardening, data engineering — matched to your task via TF-IDF scoring. Not generic. Specialized.</p>
+<br>
+</td>
+<td width="33%" align="center">
+<br>
+<h3>Multi-Channel</h3>
+<p>WhatsApp. Telegram. Discord. Voice. Web dashboard. REST API. Command your AI team from your phone at 2am. It builds while you sleep.</p>
+<br>
+</td>
+<td width="33%" align="center">
+<br>
+<h3>Zero-Hallucination Ledger</h3>
+<p>SHA-256 hash chain + bit-vector + WAL. Five verification gates. If the agent says it's done, it's cryptographically proven. No trust required.</p>
+<br>
+</td>
+</tr>
+</table>
 
-### 24/7 Daemon Agent
+<br>
+
+---
+
+<br>
+
+<div align="center">
+
+## Core Capabilities
+
+</div>
+
+<br>
+
+### `hauba agent` — The 24/7 Daemon
+
+Your personal AI engineer that never sleeps, never takes PTO, never asks for a raise.
 
 ```bash
 hauba agent --server https://hauba.tech
 ```
 
-Your personal AI engineer that never sleeps:
+| What It Does | How |
+|-------------|-----|
+| Polls for tasks | Every 10 seconds from WhatsApp/Telegram/Discord |
+| Claims and builds | Locally, with your API key |
+| Reports progress | Every 15s — live updates on your phone |
+| Tracks cost | Alerts when spend exceeds threshold ($5 default) |
+| Auto-retries | Up to 3 attempts on failure |
+| Remote cancel | Kill a task from WhatsApp mid-execution |
 
-- **Polls** the server every 10s for tasks from WhatsApp/Telegram/Discord
-- **Claims and builds** locally with your API key
-- **Reports progress** every 15s — you see live updates on your phone
-- **Cost tracking** — alerts when spend exceeds threshold (default $5)
-- **Auto-retry** — up to 3 attempts on failures
-- **Remote cancel** — cancel tasks from WhatsApp mid-execution
+<br>
 
-### WhatsApp / Telegram / Discord
+### Multi-Channel Access
 
-Message your Hauba bot from anywhere:
+Message your Hauba bot from anywhere. Build requests get queued. Chat gets instant responses. Zero false positives.
 
-| Command | What It Does |
-|---------|-------------|
-| *"build me a dashboard"* | Queues a build task for your daemon |
-| `/tasks` | List all tasks with status |
-| `/cancel <id>` | Cancel a running task |
+| Command | Effect |
+|---------|--------|
+| *"build me a dashboard"* | Queued for your daemon |
+| `/tasks` | List all tasks with live status |
+| `/cancel <id>` | Kill a running task |
 | `/retry <id>` | Retry a failed task |
-| `/web <url>` | Fetch and summarize any URL |
+| `/web <url>` | Fetch + summarize any URL |
 | `/email <to> <subj> \| <body>` | Send an email |
-| `/reply <msg\|off>` | Set/disable auto-reply |
+| `/reply <msg\|off>` | Auto-reply mode |
 | `/usage` | Cost and usage stats |
 | `/status` | Quick health check |
-| `/plugins` | List active plugins |
-| `/feedback <msg>` | Submit feedback |
-| `/new` | Clear session |
-
-**Smart routing:** "build me an API" goes to the task queue. "what's the weather?" gets an instant chat response. Zero false positives via word-boundary regex matching.
+| `/plugins` | Active plugins |
+| `/feedback <msg>` | Feedback |
+| `/new` | Fresh session |
 
 ```bash
-hauba setup whatsapp   # Interactive Twilio setup wizard
+hauba setup whatsapp   # interactive Twilio wizard
 ```
 
-### Hauba Compose — Declarative AI Teams
+<br>
 
-Like `docker-compose`, but for AI agents:
+### `hauba compose` — Declarative AI Teams
+
+Like `docker-compose`, but every container is an AI engineer.
 
 ```yaml
 # hauba.yaml
@@ -291,59 +384,67 @@ output: "./output"
 hauba compose up "build a SaaS with auth and Stripe billing"
 ```
 
-**Parallel by default.** Backend and frontend run simultaneously. DevOps waits for both. Topological DAG execution with circular dependency detection.
+Backend and frontend run **in parallel**. DevOps waits for both. DAG execution. Circular dependency detection.
+
+<br>
 
 ### 17 Built-in Skills
 
-Skills are `.md` files — human-readable, composable, installable. The SkillMatcher uses TF-IDF scoring to inject the top-3 relevant skills into every task.
+Human-readable `.md` files. Composable. Installable. TF-IDF matched to every task.
 
 <details>
-<summary><strong>View all 17 skills</strong></summary>
+<summary>&nbsp;&nbsp;<strong>View all 17</strong></summary>
 
-| Skill | Domain |
-|-------|--------|
-| `full-stack-engineering` | Complete SaaS builds (6-milestone playbook) |
-| `api-design-and-integration` | REST/GraphQL API design |
-| `code-generation` | Multi-language code generation |
+| Skill | What It Knows |
+|-------|--------------|
+| `full-stack-engineering` | Complete SaaS builds — 6-milestone playbook |
+| `api-design-and-integration` | REST, GraphQL, webhooks |
+| `code-generation` | Multi-language, any framework |
 | `data-engineering` | Pipelines, ETL, warehousing |
 | `data-processing` | Cleaning, transformation, analysis |
-| `debugging-and-repair` | Bug diagnosis and fixes |
-| `devops-and-deployment` | Docker, CI/CD, infrastructure |
+| `debugging-and-repair` | Root cause analysis, fixes |
+| `devops-and-deployment` | Docker, CI/CD, cloud infra |
 | `document-generation` | Reports, docs, technical writing |
-| `image-generation` | Image creation and processing |
-| `machine-learning` | Model training and deployment |
+| `image-generation` | Image creation + processing |
+| `machine-learning` | Training, evaluation, deployment |
 | `refactoring-and-migration` | Code modernization |
-| `research-and-analysis` | Research and analysis tasks |
-| `security-hardening` | Security audits and hardening |
-| `testing-and-quality` | Test suites and QA |
-| `video-editing` | Video trimming, effects, subtitles |
-| `web-scraping` | Web data extraction |
-| `automation-and-scripting` | Task automation |
+| `research-and-analysis` | Deep research, synthesis |
+| `security-hardening` | Audits, OWASP, hardening |
+| `testing-and-quality` | Test suites, QA, coverage |
+| `video-editing` | Trim, effects, subtitles |
+| `web-scraping` | Data extraction at scale |
+| `automation-and-scripting` | Workflow automation |
 
 </details>
 
 ```bash
-hauba skill list                    # See all skills
-hauba skill show full-stack         # View skill details
-hauba skill install ./my-skill.md   # Add custom skill
-hauba skill create my-new-skill     # Scaffold a new one
+hauba skill list                    # see all
+hauba skill show full-stack         # inspect one
+hauba skill install ./custom.md     # add yours
+hauba skill create my-skill         # scaffold
 ```
 
-### TaskLedger — Zero-Hallucination Guarantee
+<br>
 
-Every task goes through **5 verification gates** backed by a bit-vector state tracker, SHA-256 hash chain, and Write-Ahead Log:
+### TaskLedger — Zero Trust, Full Verification
 
-| Gate | What It Checks |
-|------|---------------|
-| **Pre-execution** | Ledger exists before any work begins |
-| **Dependency** | All upstream tasks verified before start |
-| **Completion** | Output hashed: `SHA256(prev + task_id + artifact)` |
-| **Delivery** | Full gate check passes at every level |
-| **Reconciliation** | Plan count === ledger count |
+Every task passes **5 cryptographic gates** before it's marked complete:
 
-If the agent says it's done, it's done. Cryptographically verified.
+```
+Gate 1  PRE-EXECUTION     Ledger must exist before any work
+Gate 2  DEPENDENCY         All upstream tasks VERIFIED
+Gate 3  COMPLETION         SHA256(prev_hash + task_id + artifact_hash)
+Gate 4  DELIVERY           Full gate check at every level
+Gate 5  RECONCILIATION     plan_count === ledger_count
+```
+
+Backed by bit-vector state tracking, SHA-256 hash chain, and Write-Ahead Log. Crash-safe. Tamper-evident. If the agent says it shipped, it shipped.
+
+<br>
 
 ### Plugin System
+
+Seven lifecycle hooks. Full async. First-class citizens.
 
 ```python
 from hauba.plugins.base import BasePlugin
@@ -357,7 +458,7 @@ class MyPlugin(BasePlugin):
         return None
 
     async def on_task_complete(self, task_id, output):
-        ...  # Custom logic
+        ...
 
 def create_plugin():
     return MyPlugin()
@@ -369,21 +470,22 @@ hauba plugins list
 hauba plugins remove my-plugin
 ```
 
-**7 lifecycle hooks:** `on_load` · `on_unload` · `on_message` · `on_task_complete` · `on_task_queued` · `on_startup` · `on_shutdown`
+`on_load` · `on_unload` · `on_message` · `on_task_complete` · `on_task_queued` · `on_startup` · `on_shutdown`
 
-### And More
+<br>
 
-| Capability | Command |
-|-----------|---------|
-| Voice conversations | `hauba voice` |
-| Real-time web dashboard | `hauba serve` |
-| REST API (BYOK, SSE) | `hauba api` |
-| Send emails | `hauba email to@co.com "Subject" "Body"` |
-| Fetch any URL | `hauba web https://example.com` |
-| Auto-reply (WhatsApp) | `hauba reply "Out of office"` |
-| Replay agent sessions | `hauba replay <id> --speed 5` |
-| Browser automation | `pip install hauba[computer-use]` |
-| System diagnostics | `hauba doctor` |
+### Everything Else
+
+| | |
+|---|---|
+| `hauba voice` | Talk to your AI team |
+| `hauba serve` | Real-time web dashboard |
+| `hauba api` | REST API with SSE streaming |
+| `hauba email` | Send emails |
+| `hauba web <url>` | Fetch and summarize any URL |
+| `hauba reply` | WhatsApp auto-reply |
+| `hauba replay <id>` | Replay any agent session |
+| `hauba doctor` | Full system diagnostics |
 
 <br>
 
@@ -391,142 +493,174 @@ hauba plugins remove my-plugin
 
 <br>
 
+<div align="center">
+
+## Supported Models
+
+**Bring any model. We don't lock you in.**
+
+</div>
+
+<br>
+
+| Provider | Models | Cost | Offline |
+|----------|--------|------|---------|
+| **Anthropic** | Claude Opus 4.6 · Sonnet 4.5 · Haiku 4.5 | Your key | — |
+| **OpenAI** | GPT-4o · o3 | Your key | — |
+| **Azure** | Any Azure OpenAI deployment | Your key | — |
+| **Ollama** | Qwen 2.5 Coder · Llama 3 · any model | **Free** | **Yes** |
+
+```bash
+hauba config llm.provider anthropic
+hauba config llm.model claude-sonnet-4-5-20250929
+```
+
+<br>
+
+---
+
+<br>
+
+<div align="center">
+
 ## Architecture
 
+</div>
+
+<br>
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        CHANNELS                                  │
-│   WhatsApp  ·  Telegram  ·  Discord  ·  Voice  ·  Web UI        │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-                    ┌──────▼──────┐
-                    │   Server    │  hauba.tech (Railway)
-                    │  ─────────  │
-                    │  Task Queue │  submit / poll / claim
-                    │  Webhooks   │  WhatsApp, Telegram, Discord
-                    │  Chat (LLM) │  lightweight server-side
-                    └──────┬──────┘
-                           │  poll every 10s
-                    ┌──────▼──────┐
-                    │   Daemon    │  hauba agent (your machine)
-                    │  ─────────  │
-                    │  Claims     │  auto-claim queued tasks
-                    │  Executes   │  CopilotEngine (YOUR key)
-                    │  Reports    │  progress + completion
-                    │  Cost Track │  per-task cost estimates
-                    └──────┬──────┘
-                           │
-              ┌────────────▼────────────┐
-              │     CopilotEngine       │  GitHub Copilot SDK
-              │  ────────────────────   │
-              │  SkillMatcher (TF-IDF)  │  17 bundled skills
-              │  TaskLedger (SHA-256)   │  zero-hallucination
-              │  Tools:                 │
-              │    bash · files · git   │
-              │    web  · browser       │
-              │    screen · fetch       │
-              └─────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                          CHANNELS                                    │
+│     WhatsApp  ·  Telegram  ·  Discord  ·  Voice  ·  Web  ·  API     │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                        ┌──────▼──────┐
+                        │   SERVER    │    hauba.tech
+                        │             │
+                        │  Task Queue │    submit / poll / claim
+                        │  Webhooks   │    channel integrations
+                        │  Chat LLM   │    lightweight responses
+                        └──────┬──────┘
+                               │ poll every 10s
+                        ┌──────▼──────┐
+                        │   DAEMON    │    your machine
+                        │             │
+                        │  Auto-claim │    picks up tasks
+                        │  Execute    │    CopilotEngine (YOUR key)
+                        │  Progress   │    live updates
+                        │  Cost track │    per-task estimates
+                        └──────┬──────┘
+                               │
+                  ┌────────────▼────────────┐
+                  │     COPILOT ENGINE      │
+                  │                         │
+                  │  SkillMatcher  (TF-IDF) │    17 domain skills
+                  │  TaskLedger (SHA-256)   │    zero hallucination
+                  │  Tools: bash · files    │
+                  │    git · web · browser  │
+                  │    screen · fetch       │
+                  └─────────────────────────┘
 ```
 
-### Source Layout
+<br>
+
+<details>
+<summary>&nbsp;&nbsp;<strong>Source layout</strong></summary>
 
 ```
 src/hauba/
-├── cli.py                  # 20+ commands (Typer)
-├── engine/copilot_engine.py  # Core engine (Copilot SDK)
+├── cli.py                     # 20+ commands (Typer + Rich)
+├── engine/copilot_engine.py   # Core — GitHub Copilot SDK
 ├── daemon/
-│   ├── agent.py            # 24/7 polling daemon
-│   └── queue.py            # Task queue (TTL, retry, cancel)
+│   ├── agent.py               # 24/7 polling daemon
+│   └── queue.py               # Task queue (TTL, retry, cancel)
 ├── channels/
-│   ├── whatsapp_webhook.py # WhatsApp bot (12 commands)
-│   ├── telegram.py         # Telegram integration
-│   ├── discord.py          # Discord integration
-│   └── voice.py            # Whisper STT + edge-tts
+│   ├── whatsapp_webhook.py    # WhatsApp bot (12 commands)
+│   ├── telegram.py            # Telegram
+│   ├── discord.py             # Discord
+│   └── voice.py               # Whisper STT + edge-tts
 ├── skills/
-│   ├── loader.py           # .md skill parser
-│   └── matcher.py          # TF-IDF skill matching
-├── plugins/                # Plugin system (base, loader, registry)
+│   ├── loader.py              # .md skill parser
+│   └── matcher.py             # TF-IDF matching
+├── plugins/                   # base, loader, registry
 ├── ledger/
-│   ├── tracker.py          # Bit-vector + SHA-256 hash chain
-│   ├── wal.py              # Write-Ahead Log
-│   └── gates.py            # 5 anti-hallucination gates
-├── memory/store.py         # SQLite (aiosqlite) + TTL
+│   ├── tracker.py             # Bit-vector + SHA-256 hash chain
+│   ├── wal.py                 # Write-Ahead Log
+│   └── gates.py               # 5 verification gates
+├── memory/store.py            # SQLite + TTL + compaction
 ├── services/
-│   ├── email.py            # SMTP email
-│   └── reply_assistant.py  # Auto-reply engine
-├── tools/                  # bash, files, git, fetch, browser, screen
-├── compose/                # hauba.yaml parser + DAG runner
-├── core/                   # Config, constants, events
-├── ui/                     # Rich terminal + FastAPI web
-└── bundled_skills/         # 17 .md skill files
+│   ├── email.py               # SMTP
+│   └── reply_assistant.py     # Auto-reply engine
+├── tools/                     # bash, files, git, fetch, browser, screen
+├── compose/                   # hauba.yaml parser + DAG runner
+├── core/                      # config, constants, events
+├── ui/                        # Rich terminal + FastAPI web
+└── bundled_skills/            # 17 .md files
 ```
 
-### Tech Stack
+</details>
 
-| Layer | Technology |
-|-------|-----------|
+<details>
+<summary>&nbsp;&nbsp;<strong>Tech stack</strong></summary>
+
+| Layer | Choice |
+|-------|--------|
 | Runtime | Python 3.11+ · asyncio |
 | AI Engine | GitHub Copilot SDK |
 | CLI | Typer · Rich |
 | Storage | SQLite (aiosqlite) |
 | Validation | Pydantic v2 |
-| HTTP | httpx (async) |
-| Logging | structlog (JSON) |
+| HTTP | httpx |
+| Logging | structlog |
 | Web | FastAPI · WebSocket |
 | Channels | Twilio · python-telegram-bot · discord.py |
 | Voice | Whisper · edge-tts |
 | Browser | Playwright |
-| Linting | ruff · pyright |
-| Testing | pytest · pytest-asyncio |
+| Quality | ruff · pyright · pytest |
 
-<br>
-
----
-
-<br>
-
-## Full CLI Reference
+</details>
 
 <details>
-<summary><strong>Click to expand all 20+ commands</strong></summary>
+<summary>&nbsp;&nbsp;<strong>Full CLI reference (20+ commands)</strong></summary>
 
 ```
 CORE
   hauba init                              Setup wizard
   hauba run "task" [--no-interactive]     Execute a task
-  hauba status                            Show config + last task
+  hauba status                            Config + last task
   hauba doctor                            System diagnostics
   hauba logs [--lines 50]                 View logs
   hauba config <key> [value]              Get/set config
 
 DAEMON & TASKS
-  hauba agent [--server URL]              Start 24/7 daemon
+  hauba agent [--server URL]              24/7 daemon
   hauba tasks [--server URL]              List tasks
-  hauba cancel <task_id>                  Cancel a task
-  hauba retry <task_id>                   Retry failed task
+  hauba cancel <task_id>                  Cancel task
+  hauba retry <task_id>                   Retry task
   hauba usage                             Cost summary
 
 COMPOSE
   hauba compose up "task" [-f file]       Run agent team
-  hauba compose validate [-f file]        Validate hauba.yaml
+  hauba compose validate [-f file]        Validate YAML
 
 SKILLS
   hauba skill list                        List skills
-  hauba skill show <name>                 View skill
-  hauba skill install <path>              Install skill
+  hauba skill show <name>                 Inspect skill
+  hauba skill install <path>              Add skill
   hauba skill create <name>               Scaffold skill
 
 PLUGINS
   hauba plugins list                      List plugins
-  hauba plugins install <path.py>         Install plugin
+  hauba plugins install <path.py>         Add plugin
   hauba plugins remove <name>             Remove plugin
 
-CHANNELS & SERVICES
-  hauba setup whatsapp                    WhatsApp setup
+CHANNELS
+  hauba setup whatsapp                    WhatsApp wizard
   hauba email <to> <subj> [body]          Send email
   hauba web <url>                         Fetch URL
   hauba reply <message|off>               Auto-reply
-  hauba feedback <message>                Send feedback
+  hauba feedback <message>                Feedback
 
 UI
   hauba voice                             Voice mode
@@ -543,35 +677,30 @@ UI
 
 <br>
 
+<div align="center">
+
 ## Deployment
 
-The server runs on [Railway](https://railway.app) at **hauba.tech**.
+</div>
+
+<br>
+
+Server runs on [Railway](https://railway.app) at **[hauba.tech](https://hauba.tech)**.
+
+It handles webhooks, task queuing, and lightweight chat. **All builds execute on your machine.** Server cost: near zero.
 
 <details>
-<summary><strong>Server environment variables</strong></summary>
+<summary>&nbsp;&nbsp;<strong>Environment variables</strong></summary>
 
 ```bash
-# Twilio (WhatsApp)
-TWILIO_ACCOUNT_SID=...
+TWILIO_ACCOUNT_SID=...                    # WhatsApp
 TWILIO_AUTH_TOKEN=...
-TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
-
-# Server LLM (lightweight chat only — NOT for builds)
-HAUBA_LLM_API_KEY=...
-HAUBA_LLM_PROVIDER=anthropic
-HAUBA_LLM_MODEL=claude-haiku-4-5-20251001
-
-# Email (optional)
-HAUBA_SMTP_HOST=smtp.gmail.com
-HAUBA_SMTP_PORT=587
-HAUBA_SMTP_USER=...
-HAUBA_SMTP_PASS=...
-HAUBA_EMAIL_FROM=hauba@example.com
+TWILIO_WHATSAPP_NUMBER=whatsapp:+1...
+HAUBA_LLM_API_KEY=...                     # Server chat only
+HAUBA_SMTP_HOST=smtp.gmail.com            # Email (optional)
 ```
 
 </details>
-
-The server handles webhooks, task queuing, and chat. **All build tasks execute on the user's machine.** Server owner cost: near zero.
 
 <br>
 
@@ -579,20 +708,26 @@ The server handles webhooks, task queuing, and chat. **All build tasks execute o
 
 <br>
 
+<div align="center">
+
 ## Testing
 
+**432 tests. Zero failures. Three OS. Three Python versions.**
+
+</div>
+
+<br>
+
 ```bash
-pytest tests/ -v                    # 432 tests
-pytest tests/ --cov=hauba           # With coverage
-pytest tests/unit/daemon/ -v        # Specific suite
+pytest tests/ -v
 ```
 
-| Matrix | Status |
-|--------|--------|
-| Ubuntu + macOS + Windows | All green |
-| Python 3.11 · 3.12 · 3.13 | All green |
-| ruff check + format | Passing |
-| pyright type checking | Passing |
+| | Status |
+|---|---|
+| Ubuntu · macOS · Windows | Passing |
+| Python 3.11 · 3.12 · 3.13 | Passing |
+| ruff lint + format | Passing |
+| pyright type check | Passing |
 
 <br>
 
@@ -603,16 +738,14 @@ pytest tests/unit/daemon/ -v        # Specific suite
 ## Contributing
 
 ```bash
-git clone https://github.com/NikeGunn/haubaa.git
-cd haubaa
+git clone https://github.com/NikeGunn/haubaa.git && cd haubaa
 pip install -e ".[dev]"
-pytest tests/ -v
-ruff check src/
+pytest tests/ -v && ruff check src/
 ```
 
 Conventional commits: `feat:` · `fix:` · `refactor:` · `test:` · `docs:`
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <br>
 
@@ -622,22 +755,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
 
 <div align="center">
 
-## License
+MIT License — [LICENSE](LICENSE)
 
-MIT — see [LICENSE](LICENSE)
+<br><br>
 
-<br>
+**Stop hiring. Start shipping.**
 
----
-
-<br>
-
-**Your key. Your machine. Your AI workstation.**
-
-[Website](https://hauba.tech) · [PyPI](https://pypi.org/project/hauba/) · [Issues](https://github.com/NikeGunn/haubaa/issues) · [Releases](https://github.com/NikeGunn/haubaa/releases)
+[hauba.tech](https://hauba.tech) &nbsp;&nbsp; [PyPI](https://pypi.org/project/hauba/) &nbsp;&nbsp; [Issues](https://github.com/NikeGunn/haubaa/issues) &nbsp;&nbsp; [Releases](https://github.com/NikeGunn/haubaa/releases)
 
 <br>
 
-<sub>Built with the GitHub Copilot SDK · Verified by TaskLedger · Powered by your API key</sub>
+<sub>Powered by GitHub Copilot SDK &nbsp;·&nbsp; Verified by TaskLedger &nbsp;·&nbsp; Your key, your machine, your company</sub>
 
 </div>
