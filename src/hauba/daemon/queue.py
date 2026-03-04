@@ -30,8 +30,11 @@ logger = structlog.get_logger()
 # Tasks expire if unclaimed after 1 hour
 TASK_TTL = 3600.0
 
-# Claimed/running tasks expire if no progress for 30 minutes
-CLAIM_TIMEOUT = 1800.0
+# Claimed/running tasks expire if no progress for 5 minutes
+CLAIM_TIMEOUT = 300.0
+
+# Maximum auto-retries for stale tasks before marking failed
+MAX_STALE_RETRIES = 3
 
 # Maximum queued tasks per owner to prevent abuse
 MAX_QUEUED_PER_OWNER = 10
@@ -49,6 +52,7 @@ class QueuedTask:
     claimed_at: float | None = None
     completed_at: float | None = None
     last_progress_at: float | None = None  # Track when progress was last updated
+    retry_count: int = 0  # How many times this task has been auto-retried
     progress: str = ""
     output: str = ""
     error: str = ""
@@ -311,14 +315,34 @@ class TaskQueue:
                 logger.debug("queue.task_expired", task_id=task.task_id)
             # Recover stale claimed/running tasks (daemon crashed)
             elif task.status in ("claimed", "running"):
-                last_activity = task.last_progress_at or task.claimed_at or task.created_at
+                if task.last_progress_at is not None:
+                    last_activity = task.last_progress_at
+                elif task.claimed_at is not None:
+                    last_activity = task.claimed_at
+                else:
+                    last_activity = task.created_at
                 if (now - last_activity) > CLAIM_TIMEOUT:
-                    task.status = "failed"
-                    task.completed_at = now
-                    task.error = "Task stalled — agent stopped responding"
-                    task.progress = "Failed (agent timeout)"
-                    logger.info(
-                        "queue.task_stale_recovered",
-                        task_id=task.task_id,
-                        stale_seconds=int(now - last_activity),
-                    )
+                    if task.retry_count < MAX_STALE_RETRIES:
+                        # Re-queue so a new daemon can pick it up
+                        task.status = "queued"
+                        task.claimed_at = None
+                        task.last_progress_at = None
+                        task.retry_count += 1
+                        task.progress = f"Re-queued (attempt {task.retry_count + 1})"
+                        logger.info(
+                            "queue.task_requeued",
+                            task_id=task.task_id,
+                            retry_count=task.retry_count,
+                            stale_seconds=int(now - last_activity),
+                        )
+                    else:
+                        # Max retries exceeded — mark as failed
+                        task.status = "failed"
+                        task.completed_at = now
+                        task.error = "Task stalled — max retries exceeded"
+                        task.progress = "Failed (max retries)"
+                        logger.info(
+                            "queue.task_stale_failed",
+                            task_id=task.task_id,
+                            stale_seconds=int(now - last_activity),
+                        )

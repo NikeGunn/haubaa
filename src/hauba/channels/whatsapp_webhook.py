@@ -334,7 +334,12 @@ class WhatsAppBot:
 
         Build tasks are routed to the queue for local execution.
         Simple chat (greetings, questions, status) uses the server LLM key.
+
+        Uses word-boundary matching to prevent false positives like
+        'appear' matching 'app' or 'restaurant' matching 'rest'.
         """
+        import re
+
         lower = body.strip().lower()
 
         # Short messages are usually chat
@@ -342,7 +347,6 @@ class WhatsAppBot:
             return False
 
         # Exclude messages that look like task management / status inquiries
-        # These contain task IDs (8-char hex), status emojis, or task commands
         management_keywords = [
             "cancel",
             "check",
@@ -377,7 +381,35 @@ class WhatsAppBot:
         if any(e in body for e in status_emojis):
             return False
 
-        # Build keywords
+        # Exclude conversational / wait messages
+        conversational_starts = [
+            "wait",
+            "please wait",
+            "hold on",
+            "one moment",
+            "ok ",
+            "okay",
+            "thanks",
+            "thank you",
+            "got it",
+            "never mind",
+            "nevermind",
+        ]
+        if any(lower.startswith(cs) for cs in conversational_starts):
+            return False
+
+        # Exclude URL-fetch / info-lookup messages
+        # These ask to *read* a URL rather than *build* something
+        url_pattern = re.compile(r"https?://|www\.|\.[a-z]{2,4}/")
+        fetch_verbs = re.compile(
+            r"\b(fetch|visit|open|browse|read|check out|look at|go to|"
+            r"find .* from|tell me about|summarize|key ?points)\b"
+        )
+        if url_pattern.search(lower) and fetch_verbs.search(lower):
+            return False
+
+        # Build keywords — matched with word boundaries to avoid false positives
+        # e.g. \bapp\b matches "app" but not "appear" or "happy"
         build_keywords = [
             "build",
             "create",
@@ -410,12 +442,13 @@ class WhatsAppBot:
             "dashboard",
             "database",
             "saas",
-            "rest",
+            "rest api",
             "crud",
             "auth",
             "stripe",
         ]
-        return any(kw in lower for kw in build_keywords)
+        pattern = r"\b(" + "|".join(re.escape(kw) for kw in build_keywords) + r")\b"
+        return bool(re.search(pattern, lower))
 
     async def _queue_build_task(self, from_number: str, body: str) -> None:
         """Queue a build task for the user's local agent.

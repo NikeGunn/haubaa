@@ -123,7 +123,7 @@ class HaubaDaemon:
         self._http = httpx.AsyncClient(
             base_url=self._server_url,
             timeout=30.0,
-            headers={"User-Agent": "hauba-agent/0.7.0"},
+            headers={"User-Agent": "hauba-agent/0.7.1"},
         )
 
         logger.info(
@@ -134,6 +134,13 @@ class HaubaDaemon:
         )
 
         try:
+            # On startup, trigger stale task recovery by polling once
+            _console.print("  [dim]Checking for tasks...[/dim]")
+            try:
+                await self._poll_and_execute()
+            except Exception as exc:
+                logger.error("daemon.startup_poll_error", error=str(exc))
+
             while self._running:
                 try:
                     await self._poll_and_execute()

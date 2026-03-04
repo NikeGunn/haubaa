@@ -34,6 +34,34 @@ class TestIsBuildTask:
         assert WhatsAppBot._is_build_task("how are you today") is False
         assert WhatsAppBot._is_build_task("tell me about hauba") is False
 
+    def test_no_substring_false_positives(self) -> None:
+        """Word-boundary matching prevents 'app' in 'appear' etc."""
+        assert (
+            WhatsAppBot._is_build_task(
+                "Wait 10 second it fetches slowly and the full project will be appear"
+            )
+            is False
+        )
+        assert (
+            WhatsAppBot._is_build_task("the restaurant has a nice atmosphere and appealing decor")
+            is False
+        )
+        assert WhatsAppBot._is_build_task("she is an authority on the codebreaking topic") is False
+
+    def test_conversational_messages_excluded(self) -> None:
+        """Messages starting with wait/thanks/ok are not build tasks."""
+        assert WhatsAppBot._is_build_task("wait a moment I need to think about this") is False
+        assert WhatsAppBot._is_build_task("thanks for the help with everything") is False
+        assert WhatsAppBot._is_build_task("ok I will check and let you know later") is False
+
+    def test_url_fetch_excluded(self) -> None:
+        """URL fetch/browse requests should not be queued as build tasks."""
+        assert WhatsAppBot._is_build_task("fetch https://example.com and find key points") is False
+        assert (
+            WhatsAppBot._is_build_task("visit nikhilbhagat.com.np/ and summarize the projects")
+            is False
+        )
+
 
 class TestSetTaskQueue:
     """Test task queue wiring."""

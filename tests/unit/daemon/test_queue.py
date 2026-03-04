@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hauba.daemon.queue import MAX_QUEUED_PER_OWNER, QueuedTask, TaskQueue
+from hauba.daemon.queue import MAX_QUEUED_PER_OWNER, MAX_STALE_RETRIES, QueuedTask, TaskQueue
 
 
 class TestQueuedTask:
@@ -261,3 +261,41 @@ class TestTaskQueue:
         task = q.get(t.task_id)
         assert task is not None
         assert task.status == "expired"
+
+    def test_stale_claimed_task_requeued(self) -> None:
+        """Stale claimed/running tasks are re-queued for new daemon pickup."""
+        q = TaskQueue()
+        t = q.submit("o1", "stale task")
+        q.claim(t.task_id)
+        # Make it stale by setting claimed_at far in the past
+        q._tasks[t.task_id].claimed_at = 0.0
+
+        # Poll triggers stale recovery — task should be re-queued
+        tasks = q.poll("o1")
+        assert len(tasks) == 1
+        assert tasks[0].task_id == t.task_id
+        assert tasks[0].status == "queued"
+        assert tasks[0].retry_count == 1
+        assert tasks[0].claimed_at is None
+
+    def test_stale_task_fails_after_max_retries(self) -> None:
+        """After MAX_STALE_RETRIES, stale tasks are marked failed."""
+        q = TaskQueue()
+        t = q.submit("o1", "stale task")
+        q.claim(t.task_id)
+        q._tasks[t.task_id].claimed_at = 0.0
+        q._tasks[t.task_id].retry_count = MAX_STALE_RETRIES
+
+        # Poll triggers stale recovery — should fail this time
+        tasks = q.poll("o1")
+        assert len(tasks) == 0
+
+        task = q.get(t.task_id)
+        assert task is not None
+        assert task.status == "failed"
+        assert "max retries" in task.error.lower()
+
+    def test_retry_count_preserved(self) -> None:
+        """QueuedTask default retry_count is 0."""
+        task = QueuedTask(task_id="t1", owner_id="o1", instruction="test")
+        assert task.retry_count == 0
