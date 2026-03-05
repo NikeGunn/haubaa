@@ -71,6 +71,14 @@ TASK_TIMEOUT = float(os.environ.get("HAUBA_TASK_TIMEOUT", "300"))
 # Progress update interval — how often to send "still working" messages
 PROGRESS_INTERVAL = 30.0
 
+# Short conversational messages that should never hit the LLM engine
+_GREETING_WORDS: frozenset[str] = frozenset(
+    {"hi", "hello", "hey", "yo", "sup", "hii", "hiii", "hola", "howdy", "hi!"}
+)
+
+# Recent send errors — exposed via /whatsapp/status for live debugging
+_recent_send_errors: list[dict] = []
+
 
 @dataclass
 class UserSession:
@@ -315,10 +323,37 @@ class WhatsAppBot:
             except Exception:
                 pass
 
+        # Short conversational messages → instant reply, no engine, no lock
+        if body.strip().lower() in _GREETING_WORDS:
+            session = self._get_or_create_session(from_number)
+            if session.is_first:
+                session.is_first = False
+                await self._send_reply(from_number, GREETING)
+            else:
+                await self._send_reply(
+                    from_number,
+                    "👋 Ready when you are! Send me a task to build, or /help for commands.",
+                )
+            return
+
         # Get or create user session
         session = self._get_or_create_session(from_number)
 
-        async with session.lock:
+        # Acquire lock with timeout to prevent indefinite blocking if a previous
+        # engine call is stuck. After 90s, reset the session and start fresh.
+        try:
+            await asyncio.wait_for(session.lock.acquire(), timeout=90.0)
+        except TimeoutError:
+            logger.warning(
+                "whatsapp_bot.lock_timeout",
+                from_number=from_number,
+                msg="Session lock held >90s — resetting session",
+            )
+            await self._destroy_session(from_number)
+            session = self._get_or_create_session(from_number)
+            await session.lock.acquire()
+
+        try:
             session.last_active = time.time()
             session.message_count += 1
 
@@ -352,6 +387,8 @@ class WhatsAppBot:
                         f"Sorry, something went wrong: {str(exc)[:200]}\n\n"
                         "Send /new to start a fresh session.",
                     )
+        finally:
+            session.lock.release()
 
     @staticmethod
     def _is_build_task(body: str) -> bool:
@@ -659,13 +696,18 @@ class WhatsAppBot:
     def _parse_command(body: str) -> tuple[str, str]:
         """Parse /command <args> from message body.
 
+        Strips trailing punctuation from the command token so that
+        '/help,' or '/help!' (common from mobile keyboards) still match.
+
         Returns (command, args). If not a command, returns ("", body).
         """
         stripped = body.strip()
         if not stripped.startswith("/"):
             return ("", body)
         parts = stripped.split(None, 1)
-        return (parts[0].lower(), parts[1] if len(parts) > 1 else "")
+        # Strip trailing punctuation that mobile keyboards may add (e.g. '/help,')
+        cmd = parts[0].lower().rstrip(",.:;!?")
+        return (cmd, parts[1] if len(parts) > 1 else "")
 
     async def _handle_tasks(self, from_number: str) -> None:
         """Show detailed task list with IDs."""
@@ -1133,6 +1175,15 @@ class WhatsAppBot:
                 ),
             )
         except Exception as exc:
+            err_entry = {
+                "t": time.time(),
+                "to": to_number,
+                "err": str(exc)[:300],
+                "type": type(exc).__name__,
+            }
+            _recent_send_errors.append(err_entry)
+            if len(_recent_send_errors) > 20:
+                _recent_send_errors.pop(0)
             logger.error(
                 "whatsapp_bot.send_failed",
                 to=to_number,

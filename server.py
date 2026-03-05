@@ -569,6 +569,8 @@ def create_server_app():
             @app.get("/whatsapp/status", include_in_schema=False)
             async def whatsapp_status():
                 """Check WhatsApp bot status (hidden from docs)."""
+                from hauba.channels.whatsapp_webhook import _recent_send_errors
+
                 return {
                     "enabled": True,
                     "active_sessions": _wa_bot.session_count,
@@ -580,7 +582,39 @@ def create_server_app():
                     "has_owner": bool(_wa_bot._owner_number),
                     "has_reply_assistant": _wa_bot._reply_assistant is not None,
                     "has_task_queue": _wa_bot._task_queue is not None,
+                    "recent_send_errors": _recent_send_errors[-5:],
                 }
+
+            @app.post("/whatsapp/test-send", include_in_schema=False)
+            async def whatsapp_test_send(request: Request):
+                """Test Twilio sending directly. POST {"to":"+1234567890","msg":"test"}"""
+                data = await request.json()
+                to = data.get("to", "").strip()
+                msg = data.get("msg", "Hauba test message.").strip()
+                if not to:
+                    from fastapi import HTTPException
+                    raise HTTPException(400, "to is required")
+                if not to.startswith("whatsapp:"):
+                    to = f"whatsapp:{to}"
+                try:
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(
+                        None,
+                        lambda: _wa_bot._twilio_client.messages.create(
+                            body=msg,
+                            from_=_wa_bot._from_number,
+                            to=to,
+                        ),
+                    )
+                    return {"ok": True, "to": to, "from": _wa_bot._from_number}
+                except Exception as exc:
+                    return {
+                        "ok": False,
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                        "to": to,
+                        "from": _wa_bot._from_number,
+                    }
 
             # Start session cleanup loop on first request
             _wa_cleanup_started = False
