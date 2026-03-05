@@ -385,9 +385,7 @@ def _resolve_twilio_creds() -> tuple[str, str, str, str]:
 
     sid = resolve("TWILIO_ACCOUNT_SID", "whatsapp.account_sid")
     token = resolve("TWILIO_AUTH_TOKEN", "whatsapp.auth_token")
-    from_num = resolve(
-        "TWILIO_WHATSAPP_NUMBER", "whatsapp.from_number", "whatsapp:+14155238886"
-    )
+    from_num = resolve("TWILIO_WHATSAPP_NUMBER", "whatsapp.from_number", "whatsapp:+14155238886")
     to_num = resolve("HAUBA_WHATSAPP_TO", "whatsapp.to_number")
 
     return sid, token, from_num, to_num
@@ -929,9 +927,7 @@ def setup_email() -> None:
         console.print(
             f"  [green]+[/green] Brevo key found: [dim]{existing_key[:8]}...{existing_key[-4:]}[/dim]"
         )
-        reuse = Prompt.ask(
-            "  [bold]Use existing key?[/bold] [green]Y[/green]/n", default="y"
-        )
+        reuse = Prompt.ask("  [bold]Use existing key?[/bold] [green]Y[/green]/n", default="y")
         if reuse.strip().lower() in ("n", "no"):
             existing_key = ""
 
@@ -959,9 +955,7 @@ def setup_email() -> None:
 
     # Sender name (optional)
     from_name = config.get("email.from_name") or "Hauba AI"
-    new_name = Prompt.ask(
-        "  [bold]Sender name[/bold]", default=from_name
-    ).strip()
+    new_name = Prompt.ask("  [bold]Sender name[/bold]", default=from_name).strip()
     if new_name and new_name != from_name:
         config.set("email.from_name", new_name)
 
@@ -971,7 +965,7 @@ def setup_email() -> None:
             "[bold green]Email setup complete![/bold green]\n\n"
             "  Credentials saved to ~/.hauba/settings.json\n\n"
             "  [bold]Test it:[/bold]\n"
-            '  Send /email on WhatsApp, or use in a task.\n\n'
+            "  Send /email on WhatsApp, or use in a task.\n\n"
             "  [dim]300 free emails/day with Brevo. No credit card needed.[/dim]",
             border_style="green",
             padding=(1, 2),
