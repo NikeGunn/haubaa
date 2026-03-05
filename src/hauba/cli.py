@@ -379,21 +379,16 @@ def _resolve_twilio_creds() -> tuple[str, str, str, str]:
     """Resolve Twilio credentials from env vars > config file.
 
     Returns (account_sid, auth_token, from_number, to_number).
-    Env vars take priority: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
-    TWILIO_WHATSAPP_NUMBER, HAUBA_WHATSAPP_TO.
+    Uses resolve() for consistent priority: env var → config file → default.
     """
-    from hauba.core.config import ConfigManager
+    from hauba.core.config import resolve
 
-    config = ConfigManager()
-
-    sid = os.environ.get("TWILIO_ACCOUNT_SID") or config.get("whatsapp.account_sid") or ""
-    token = os.environ.get("TWILIO_AUTH_TOKEN") or config.get("whatsapp.auth_token") or ""
-    from_num = (
-        os.environ.get("TWILIO_WHATSAPP_NUMBER")
-        or config.get("whatsapp.from_number")
-        or "whatsapp:+14155238886"
+    sid = resolve("TWILIO_ACCOUNT_SID", "whatsapp.account_sid")
+    token = resolve("TWILIO_AUTH_TOKEN", "whatsapp.auth_token")
+    from_num = resolve(
+        "TWILIO_WHATSAPP_NUMBER", "whatsapp.from_number", "whatsapp:+14155238886"
     )
-    to_num = os.environ.get("HAUBA_WHATSAPP_TO") or config.get("whatsapp.to_number") or ""
+    to_num = resolve("HAUBA_WHATSAPP_TO", "whatsapp.to_number")
 
     return sid, token, from_num, to_num
 
@@ -820,8 +815,10 @@ def setup_whatsapp() -> None:
 
     config = ConfigManager()
 
+    from hauba.core.config import resolve
+
     # --- Step 1: Credentials ---
-    existing_sid = os.environ.get("TWILIO_ACCOUNT_SID") or config.get("whatsapp.account_sid") or ""
+    existing_sid = resolve("TWILIO_ACCOUNT_SID", "whatsapp.account_sid")
 
     if existing_sid:
         console.print(
@@ -832,7 +829,7 @@ def setup_whatsapp() -> None:
         )
         if reuse.strip().lower() not in ("n", "no"):
             sid = existing_sid
-            token = os.environ.get("TWILIO_AUTH_TOKEN") or config.get("whatsapp.auth_token") or ""
+            token = resolve("TWILIO_AUTH_TOKEN", "whatsapp.auth_token")
         else:
             sid = Prompt.ask("  [bold]Account SID[/bold]").strip()
             token = Prompt.ask("  [bold]Auth Token[/bold]", password=True).strip()
@@ -894,6 +891,88 @@ def setup_whatsapp() -> None:
             f"    TWILIO_AUTH_TOKEN={token}\n\n"
             "  [dim]Env vars override config file, so Railway will just work.[/dim]\n\n"
             '  [bold]Test it:[/bold] hauba run "hello world" --interactive',
+            border_style="green",
+            padding=(1, 2),
+        )
+    )
+
+
+@setup_app.command(name="email")
+def setup_email() -> None:
+    """Set up email delivery (Brevo — free, 300 emails/day, no credit card).
+
+    Brevo (formerly Sendinblue) gives you 300 free emails/day.
+    Just paste your API key and verified sender email.
+    """
+    from hauba.core.config import ConfigManager
+
+    console.print()
+    console.print(
+        Panel(
+            "[bold cyan]Email Setup — Brevo (Free)[/bold cyan]\n\n"
+            "Brevo gives you 300 emails/day for free. No credit card.\n\n"
+            "[bold]What you need:[/bold]\n"
+            "  1. A free Brevo account ([bold]brevo.com[/bold])\n"
+            "  2. Your API key (Settings > SMTP & API > API Keys)\n"
+            "  3. A verified sender email address",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+    )
+    console.print()
+
+    config = ConfigManager()
+
+    # Check existing config
+    existing_key = config.get("email.brevo_api_key") or ""
+    if existing_key:
+        console.print(
+            f"  [green]+[/green] Brevo key found: [dim]{existing_key[:8]}...{existing_key[-4:]}[/dim]"
+        )
+        reuse = Prompt.ask(
+            "  [bold]Use existing key?[/bold] [green]Y[/green]/n", default="y"
+        )
+        if reuse.strip().lower() in ("n", "no"):
+            existing_key = ""
+
+    if not existing_key:
+        api_key = Prompt.ask("  [bold]Brevo API Key[/bold]", password=True).strip()
+        if not api_key:
+            console.print("  [red]API key is required.[/red]")
+            return
+        config.set("email.brevo_api_key", api_key)
+
+    # Sender email
+    existing_from = config.get("email.from_email") or ""
+    if existing_from:
+        console.print(f"  [green]+[/green] Sender email: [bold]{existing_from}[/bold]")
+        change = Prompt.ask("  [bold]Change?[/bold] y/[red]N[/red]", default="n")
+        if change.strip().lower() in ("y", "yes"):
+            existing_from = ""
+
+    if not existing_from:
+        from_email = Prompt.ask(
+            "  [bold]Sender email[/bold] [dim](must be verified in Brevo)[/dim]"
+        ).strip()
+        if from_email:
+            config.set("email.from_email", from_email)
+
+    # Sender name (optional)
+    from_name = config.get("email.from_name") or "Hauba AI"
+    new_name = Prompt.ask(
+        "  [bold]Sender name[/bold]", default=from_name
+    ).strip()
+    if new_name and new_name != from_name:
+        config.set("email.from_name", new_name)
+
+    console.print()
+    console.print(
+        Panel(
+            "[bold green]Email setup complete![/bold green]\n\n"
+            "  Credentials saved to ~/.hauba/settings.json\n\n"
+            "  [bold]Test it:[/bold]\n"
+            '  Send /email on WhatsApp, or use in a task.\n\n'
+            "  [dim]300 free emails/day with Brevo. No credit card needed.[/dim]",
             border_style="green",
             padding=(1, 2),
         )

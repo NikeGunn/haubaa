@@ -489,7 +489,9 @@ def create_server_app():
                 from hauba.services.reply_assistant import ReplyAssistant
 
                 _reply_assistant = ReplyAssistant()
-                _owner_wa = os.environ.get("HAUBA_OWNER_WHATSAPP", "")
+                from hauba.core.config import resolve
+
+                _owner_wa = resolve("HAUBA_OWNER_WHATSAPP", "whatsapp.owner_number")
                 if _owner_wa:
                     _reply_assistant.set_owner_number(_owner_wa)
                 _wa_bot._reply_assistant = _reply_assistant
@@ -570,6 +572,14 @@ def create_server_app():
                 return {
                     "enabled": True,
                     "active_sessions": _wa_bot.session_count,
+                    "has_twilio_client": _wa_bot._twilio_client is not None,
+                    "from_number": _wa_bot._from_number,
+                    "has_api_key": bool(_wa_bot._api_key),
+                    "provider": _wa_bot._provider,
+                    "model": _wa_bot._model,
+                    "has_owner": bool(_wa_bot._owner_number),
+                    "has_reply_assistant": _wa_bot._reply_assistant is not None,
+                    "has_task_queue": _wa_bot._task_queue is not None,
                 }
 
             # Start session cleanup loop on first request

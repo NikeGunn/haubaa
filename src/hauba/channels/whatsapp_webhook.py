@@ -50,6 +50,7 @@ GREETING = (
     "  /web URL  - Fetch a web page\n"
     "  /email    - Send an email\n"
     "  /reply    - Auto-reply (setup/on/off/briefing)\n"
+    "  /setup    - Configure your Hauba instance\n"
     "  /usage    - Cost summary\n"
     "  /plugins  - List plugins\n"
     "  /feedback - Send feedback\n"
@@ -107,7 +108,7 @@ class WhatsAppBot:
         self._email_service: Any = None  # EmailService (set by server.py)
         self._reply_assistant: Any = None  # ReplyAssistant (set by server.py)
         self._plugin_registry: Any = None  # PluginRegistry (set by server.py)
-        self._owner_number: str = os.environ.get("HAUBA_OWNER_WHATSAPP", "")
+        self._owner_number: str = ""  # Set in configure() via resolve()
 
     def set_task_queue(self, queue: Any) -> None:
         """Set the task queue for Queue + Poll architecture.
@@ -118,28 +119,34 @@ class WhatsAppBot:
         self._task_queue = queue
 
     def configure(self) -> bool:
-        """Load configuration from environment variables.
+        """Load configuration from env vars → config file → defaults.
 
-        Required:
-            TWILIO_ACCOUNT_SID — Twilio Account SID
-            TWILIO_AUTH_TOKEN  — Twilio Auth Token
-            HAUBA_LLM_API_KEY  — LLM API key (server owner provides)
+        Priority: ENV_VAR > ~/.hauba/settings.json > default
+
+        Required (set via CLI `hauba config` or env var):
+            TWILIO_ACCOUNT_SID / whatsapp.account_sid
+            TWILIO_AUTH_TOKEN  / whatsapp.auth_token
+            HAUBA_LLM_API_KEY  / llm.api_key
 
         Optional:
-            HAUBA_LLM_PROVIDER — "anthropic" (default), "openai", "ollama"
-            HAUBA_LLM_MODEL    — Model name (default: claude-sonnet-4-5-20250514)
-            TWILIO_WHATSAPP_NUMBER — From number (default: sandbox number)
+            HAUBA_LLM_PROVIDER / llm.provider — default "anthropic"
+            HAUBA_LLM_MODEL    / llm.model   — default model
+            TWILIO_WHATSAPP_NUMBER / whatsapp.from_number
+            HAUBA_OWNER_WHATSAPP   / whatsapp.owner_number
 
         Returns True if all required vars are present.
         """
-        self._account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
-        self._auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-        self._api_key = os.environ.get("HAUBA_LLM_API_KEY", "")
-        self._provider = os.environ.get("HAUBA_LLM_PROVIDER", "anthropic")
-        self._model = os.environ.get("HAUBA_LLM_MODEL", "claude-sonnet-4-5-20250514")
-        from_num = os.environ.get("TWILIO_WHATSAPP_NUMBER", "")
+        from hauba.core.config import resolve
+
+        self._account_sid = resolve("TWILIO_ACCOUNT_SID", "whatsapp.account_sid")
+        self._auth_token = resolve("TWILIO_AUTH_TOKEN", "whatsapp.auth_token")
+        self._api_key = resolve("HAUBA_LLM_API_KEY", "llm.api_key")
+        self._provider = resolve("HAUBA_LLM_PROVIDER", "llm.provider", "anthropic")
+        self._model = resolve("HAUBA_LLM_MODEL", "llm.model", "claude-sonnet-4-5-20250514")
+        from_num = resolve("TWILIO_WHATSAPP_NUMBER", "whatsapp.from_number")
         if from_num:
             self._from_number = from_num
+        self._owner_number = resolve("HAUBA_OWNER_WHATSAPP", "whatsapp.owner_number")
 
         if not self._account_sid or not self._auth_token or not self._api_key:
             logger.info(
@@ -246,6 +253,9 @@ class WhatsAppBot:
             return
         if cmd == "/email":
             await self._handle_email(from_number, args)
+            return
+        if cmd == "/setup":
+            await self._handle_setup(from_number, args)
             return
         if cmd == "/reply":
             await self._handle_reply_cmd(from_number, args)
@@ -790,9 +800,10 @@ class WhatsAppBot:
                 "Set up free email (Brevo — 300/day, no credit card):\n"
                 "  1. Sign up at brevo.com (free)\n"
                 "  2. Get your API key from Settings > SMTP & API\n"
-                "  3. Set env vars:\n"
-                "     HAUBA_EMAIL_API_KEY=your_brevo_key\n"
-                "     HAUBA_EMAIL_FROM=you@yourdomain.com",
+                "  3. Send:\n"
+                "     /setup email <your_brevo_key>\n"
+                "     /setup emailfrom you@yourdomain.com\n\n"
+                "Or via CLI: hauba setup email",
             )
             return
 
@@ -830,6 +841,171 @@ class WhatsAppBot:
         s = from_number.replace("whatsapp:", "").strip()
         o = self._owner_number.replace("whatsapp:", "").strip()
         return s == o
+
+    async def _handle_setup(self, from_number: str, args: str) -> None:
+        """Owner self-setup via WhatsApp.
+
+        /setup claim             — Claim ownership (first user only)
+        /setup apikey <key>      — Set LLM API key
+        /setup provider <name>   — Set LLM provider (anthropic/openai/ollama/deepseek)
+        /setup model <name>      — Set LLM model
+        /setup email <key>       — Set Brevo email API key
+        /setup emailfrom <addr>  — Set sender email address
+        /setup status            — Show current config status
+        """
+        # Preserve raw args for keys/values (don't lowercase the value)
+        sub = args.strip().split(None, 1)
+        sub_cmd = (sub[0].lower()) if sub else ""
+        sub_args = sub[1] if len(sub) > 1 else ""
+
+        if sub_cmd == "claim":
+            # If no owner set, let this person claim ownership
+            if self._owner_number and not self._is_owner(from_number):
+                await self._send_reply(from_number, "An owner is already configured.")
+                return
+            # Save owner number to config file
+            try:
+                from hauba.core.config import get_config
+
+                cfg = get_config()
+                raw = from_number.replace("whatsapp:", "").strip()
+                cfg.set("whatsapp.owner_number", raw)
+                self._owner_number = raw
+                await self._send_reply(
+                    from_number,
+                    "You're now the owner of this Hauba instance.\n\n"
+                    "Next steps:\n"
+                    "  /setup apikey <key> — Set your LLM API key\n"
+                    "  /setup status — Check what's configured\n"
+                    "  /help — See all commands",
+                )
+            except Exception as exc:
+                await self._send_reply(from_number, f"Setup error: {str(exc)[:200]}")
+            return
+
+        # All other setup commands require owner
+        if not self._is_owner(from_number):
+            # If no owner yet, guide them to claim first
+            if not self._owner_number:
+                await self._send_reply(
+                    from_number,
+                    "No owner configured yet.\n\nSend: /setup claim",
+                )
+            else:
+                await self._send_reply(from_number, "Only the owner can use /setup.")
+            return
+
+        if sub_cmd == "apikey" and sub_args:
+            try:
+                from hauba.core.config import get_config
+
+                cfg = get_config()
+                cfg.set("llm.api_key", sub_args.strip())
+                self._api_key = sub_args.strip()
+                await self._send_reply(
+                    from_number,
+                    "✅ LLM API key saved.",
+                )
+            except Exception as exc:
+                await self._send_reply(from_number, f"Error: {str(exc)[:200]}")
+            return
+
+        if sub_cmd == "provider" and sub_args:
+            allowed = ("anthropic", "openai", "ollama", "deepseek")
+            val = sub_args.strip().lower()
+            if val not in allowed:
+                await self._send_reply(
+                    from_number,
+                    f"Unknown provider. Choose: {', '.join(allowed)}",
+                )
+                return
+            try:
+                from hauba.core.config import get_config
+
+                cfg = get_config()
+                cfg.set("llm.provider", val)
+                self._provider = val
+                await self._send_reply(from_number, f"✅ Provider set to *{val}*.")
+            except Exception as exc:
+                await self._send_reply(from_number, f"Error: {str(exc)[:200]}")
+            return
+
+        if sub_cmd == "model" and sub_args:
+            try:
+                from hauba.core.config import get_config
+
+                cfg = get_config()
+                cfg.set("llm.model", sub_args.strip())
+                self._model = sub_args.strip()
+                await self._send_reply(from_number, f"✅ Model set to *{self._model}*.")
+            except Exception as exc:
+                await self._send_reply(from_number, f"Error: {str(exc)[:200]}")
+            return
+
+        if sub_cmd == "email" and sub_args:
+            try:
+                from hauba.core.config import get_config
+
+                cfg = get_config()
+                cfg.set("email.brevo_api_key", sub_args.strip())
+                await self._send_reply(
+                    from_number,
+                    "✅ Brevo email API key saved.\n\n"
+                    "Now set your sender email:\n"
+                    "  /setup emailfrom you@yourdomain.com",
+                )
+            except Exception as exc:
+                await self._send_reply(from_number, f"Error: {str(exc)[:200]}")
+            return
+
+        if sub_cmd == "emailfrom" and sub_args:
+            try:
+                from hauba.core.config import get_config
+
+                cfg = get_config()
+                cfg.set("email.from_email", sub_args.strip())
+                await self._send_reply(
+                    from_number,
+                    f"✅ Sender email set to *{sub_args.strip()}*.\n\n"
+                    "Email is ready! Use /email to send.",
+                )
+            except Exception as exc:
+                await self._send_reply(from_number, f"Error: {str(exc)[:200]}")
+            return
+
+        if sub_cmd == "status":
+            email_ok = self._email_service and self._email_service.is_configured
+            status_lines = [
+                "*Hauba Setup Status*\n",
+                f"  Owner: {'✅ You' if self._is_owner(from_number) else '❌ Not set'}",
+                f"  LLM Key: {'✅ Set' if self._api_key else '❌ Missing'}",
+                f"  Provider: {self._provider}",
+                f"  Model: {self._model}",
+                f"  Twilio: {'✅ Connected' if self._twilio_client else '❌'}",
+                f"  Email: {'✅ Ready' if email_ok else '❌ Not set'}",
+                f"  Reply Assistant: {'✅' if self._reply_assistant else '—'}",
+                f"  Task Queue: {'✅' if self._task_queue else '—'}",
+                "",
+                "_User config:_ /setup apikey, provider, model, email",
+                "_Dev config:_ Twilio, Brave (env vars on server)",
+            ]
+            await self._send_reply(from_number, "\n".join(status_lines))
+            return
+
+        # Default: show setup help
+        await self._send_reply(
+            from_number,
+            "*Setup Commands*\n\n"
+            "*Your config (personal):*\n"
+            "  /setup claim — Claim ownership\n"
+            "  /setup apikey <key> — LLM API key\n"
+            "  /setup provider <name> — anthropic/openai/ollama/deepseek\n"
+            "  /setup model <name> — LLM model name\n"
+            "  /setup email <key> — Brevo email API key\n"
+            "  /setup emailfrom <addr> — Sender email\n"
+            "  /setup status — Show current config\n\n"
+            "_Twilio & Brave keys are set by the developer on the server._",
+        )
 
     async def _handle_reply_cmd(self, from_number: str, args: str) -> None:
         """Set or disable auto-reply. Supports /reply setup for onboarding."""
@@ -932,7 +1108,11 @@ class WhatsAppBot:
         )
 
     async def _send_reply(self, to_number: str, text: str) -> None:
-        """Send a WhatsApp reply via Twilio REST API."""
+        """Send a WhatsApp reply via Twilio REST API.
+
+        Runs the blocking Twilio SDK call in a thread pool to avoid
+        blocking the asyncio event loop.
+        """
         if not self._twilio_client:
             logger.warning("whatsapp_bot.no_client")
             return
@@ -943,16 +1123,22 @@ class WhatsAppBot:
             from_num = f"whatsapp:{from_num}"
 
         try:
-            self._twilio_client.messages.create(
-                body=text[:MAX_MSG_LEN],
-                from_=from_num,
-                to=to_number,
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: self._twilio_client.messages.create(
+                    body=text[:MAX_MSG_LEN],
+                    from_=from_num,
+                    to=to_number,
+                ),
             )
         except Exception as exc:
             logger.error(
                 "whatsapp_bot.send_failed",
                 to=to_number,
+                from_=from_num,
                 error=str(exc),
+                error_type=type(exc).__name__,
             )
 
     def _get_or_create_session(self, from_number: str) -> UserSession:

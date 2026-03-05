@@ -13,7 +13,6 @@ Fallback: If HAUBA_SMTP_* vars are set, uses SMTP (Gmail, Outlook, etc.)
 
 from __future__ import annotations
 
-import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -62,10 +61,12 @@ class EmailService:
         Tries Brevo API first, then SMTP fallback.
         Returns True if any email method is configured.
         """
+        from hauba.core.config import resolve
+
         # Try Brevo API first (free, preferred)
-        self._brevo_api_key = os.environ.get("HAUBA_EMAIL_API_KEY", "")
-        self._from_email = os.environ.get("HAUBA_EMAIL_FROM", "")
-        self._from_name = os.environ.get("HAUBA_EMAIL_FROM_NAME", "Hauba AI")
+        self._brevo_api_key = resolve("HAUBA_EMAIL_API_KEY", "email.brevo_api_key")
+        self._from_email = resolve("HAUBA_EMAIL_FROM", "email.from_email")
+        self._from_name = resolve("HAUBA_EMAIL_FROM_NAME", "email.from_name", "Hauba AI")
 
         if self._brevo_api_key and self._from_email:
             self._configured = True
@@ -78,10 +79,11 @@ class EmailService:
             return True
 
         # Fallback: SMTP
-        self._smtp_host = os.environ.get("HAUBA_SMTP_HOST", "")
-        self._smtp_port = int(os.environ.get("HAUBA_SMTP_PORT", "587"))
-        self._smtp_user = os.environ.get("HAUBA_SMTP_USER", "")
-        self._smtp_password = os.environ.get("HAUBA_SMTP_PASS", "")
+        self._smtp_host = resolve("HAUBA_SMTP_HOST", "email.smtp_host")
+        smtp_port_str = resolve("HAUBA_SMTP_PORT", "email.smtp_port", "587")
+        self._smtp_port = int(smtp_port_str)
+        self._smtp_user = resolve("HAUBA_SMTP_USER", "email.smtp_user")
+        self._smtp_password = resolve("HAUBA_SMTP_PASS", "email.smtp_password")
 
         if not self._from_email:
             self._from_email = self._smtp_user

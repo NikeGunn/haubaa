@@ -40,6 +40,19 @@ class WhatsAppConfig(BaseModel):
     from_number: str = "whatsapp:+14155238886"  # Twilio Sandbox default
     to_number: str = ""  # Owner's WhatsApp number, e.g. "+9779812345678"
     sandbox_code: str = ""  # Twilio sandbox join code
+    owner_number: str = ""  # Owner's WhatsApp number for bot commands
+
+
+class EmailConfig(BaseModel):
+    """Email delivery configuration."""
+
+    brevo_api_key: str = ""
+    from_email: str = ""
+    from_name: str = "Hauba AI"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
 
 
 class HaubaSettings(BaseModel):
@@ -47,11 +60,45 @@ class HaubaSettings(BaseModel):
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
     whatsapp: WhatsAppConfig = Field(default_factory=WhatsAppConfig)
+    email: EmailConfig = Field(default_factory=EmailConfig)
     owner_name: str = ""
     data_dir: str = ""
     log_level: str = "INFO"
     think_time: float = 2.0
     allow_screen_control: bool = False
+
+
+# Singleton for server-side access without passing instances everywhere
+_global_config: ConfigManager | None = None
+
+
+def get_config() -> ConfigManager:
+    """Get the global ConfigManager singleton.
+
+    Creates one if it doesn't exist. Safe to call from anywhere.
+    """
+    global _global_config
+    if _global_config is None:
+        _global_config = ConfigManager()
+    return _global_config
+
+
+def resolve(env_var: str, config_key: str, default: str = "") -> str:
+    """Resolve a value from env var first, then config file, then default.
+
+    This is the core pattern: env vars (for Railway/Docker) override
+    config file values (set via CLI/WhatsApp), which override defaults.
+    """
+    import os
+
+    val = os.environ.get(env_var, "")
+    if val:
+        return val
+    cfg = get_config()
+    cfg_val = cfg.get(config_key)
+    if cfg_val:
+        return str(cfg_val)
+    return default
 
 
 class ConfigManager:
