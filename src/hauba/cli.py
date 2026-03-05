@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import webbrowser
 from pathlib import Path
 
 import typer
@@ -106,7 +107,8 @@ console = Console()
 
 @app.command()
 def init() -> None:
-    """Initialize Hauba — creates ~/.hauba/ and runs interactive setup wizard."""
+    """Initialize Hauba — full setup wizard. No technical knowledge needed."""
+    from hauba.core.config import ConfigManager
     from hauba.core.setup import ensure_hauba_dirs
     from hauba.ui.interactive import select_menu
 
@@ -116,7 +118,7 @@ def init() -> None:
             "[bold cyan]Hauba — Your AI Engineering Team[/bold cyan]\n\n"
             "Build software, edit video, process data, train ML models,\n"
             "generate documents, scrape websites, and automate anything.\n\n"
-            "[dim]One command. Ship products. Not prompts.[/dim]",
+            "[dim]I'll guide you through setup. Takes under 2 minutes.[/dim]",
             title="[bold]Welcome[/bold]",
             border_style="cyan",
             padding=(1, 2),
@@ -124,91 +126,275 @@ def init() -> None:
     )
 
     ensure_hauba_dirs()
-    console.print("  [green]+[/green] Created ~/.hauba/ directory structure")
-
-    from hauba.core.config import ConfigManager
-
     config = ConfigManager()
 
+    # ── Name ──────────────────────────────────────────────────────────────
     console.print()
-    name = Prompt.ask("  [bold]Your name[/bold]", default="Developer")
+    name = Prompt.ask(
+        "  [bold]Your name[/bold]",
+        default=config.settings.owner_name or "Developer",
+    )
     config.settings.owner_name = name
 
-    # Interactive provider selection with arrow keys
-    providers = ["Anthropic (Claude)", "OpenAI (GPT)", "Ollama (Local)", "DeepSeek"]
-    provider_keys = ["anthropic", "openai", "ollama", "deepseek"]
-    provider_descs = [
-        "Best for coding — Claude Sonnet 4.5",
-        "GPT-4o and latest models",
-        "100% local, no API key needed",
-        "Cost-effective alternative",
+    # ── Step 1: LLM Provider ─────────────────────────────────────────────
+    console.print()
+    console.print("  [bold cyan]Step 1/3 — AI Provider[/bold cyan]")
+    console.print(
+        "  [dim]Hauba needs an AI provider to think and build. I'll help you pick one.[/dim]\n"
+    )
+
+    _ollama_available = _check_ollama_running()
+    if _ollama_available:
+        console.print("  [green]+[/green] Ollama detected locally (free, no API key needed)\n")
+
+    providers = [
+        "Anthropic (Claude Sonnet)" + ("" if _ollama_available else " [recommended]"),
+        "OpenAI (GPT-4o)",
+        "Ollama — 100% local, FREE" + (" [running]" if _ollama_available else " [needs install]"),
+        "DeepSeek — cheap alternative",
+        "I don't have a key — help me get one",
     ]
-    idx = select_menu(console, "Choose your LLM provider:", providers, provider_descs)
+    provider_keys = ["anthropic", "openai", "ollama", "deepseek", "help"]
+    provider_descs = [
+        "Best for coding. ~$3/mo average.",
+        "GPT-4o. ~$5/mo average.",
+        "Runs on your machine. Zero cost, full privacy.",
+        "Very cost-effective. ~$0.50/mo average.",
+        "I'll open the right website for you.",
+    ]
+    idx = select_menu(console, "Which AI provider?", providers, provider_descs)
     if idx < 0:
         idx = 0
     provider = provider_keys[idx]
-    config.settings.llm.provider = provider
+
+    if provider == "help":
+        console.print()
+        console.print(
+            Panel(
+                "[bold]Easiest options:[/bold]\n\n"
+                "  [green]1. Free (Ollama)[/green] — runs on your computer, no account needed\n"
+                "     Best if you have: 8 GB+ RAM\n\n"
+                "  [yellow]2. Anthropic Claude[/yellow] — best quality, $5 free credit to start\n"
+                "     Best if you want: the smartest results\n\n"
+                "  [blue]3. DeepSeek[/blue] — very cheap, almost as good\n"
+                "     Best if you want: low cost",
+                border_style="cyan",
+                padding=(1, 2),
+            )
+        )
+        choice_opts = [
+            "Ollama (free, local)",
+            "Anthropic Claude ($5 free credit)",
+            "DeepSeek (cheap)",
+        ]
+        choice_keys = ["ollama", "anthropic", "deepseek"]
+        choice_descs = [
+            "No account needed, runs on your PC",
+            "Open browser → get key in 2 min",
+            "Open browser → get key in 2 min",
+        ]
+        cidx = select_menu(console, "Pick what works for you:", choice_opts, choice_descs)
+        if cidx < 0:
+            cidx = 1
+        provider = choice_keys[cidx]
+
+        if provider in ("anthropic", "deepseek"):
+            urls = {
+                "anthropic": "https://console.anthropic.com/settings/keys",
+                "deepseek": "https://platform.deepseek.com/api_keys",
+            }
+            console.print(f"\n  [dim]Opening {urls[provider]} in your browser...[/dim]")
+            try:
+                webbrowser.open(urls[provider])
+            except Exception:
+                console.print(f"  [yellow]Visit:[/yellow] {urls[provider]}")
+            console.print("  [dim]Sign up → get API key → come back and paste it below.[/dim]\n")
 
     if provider == "ollama":
+        config.settings.llm.provider = "ollama"
         config.settings.llm.base_url = "http://localhost:11434"
-        # Model selection for Ollama
-        ollama_models = ["llama3.1", "codellama", "mixtral", "deepseek-coder"]
+        config.settings.llm.api_key = "ollama"
+
+        if not _ollama_available:
+            console.print()
+            console.print(
+                Panel(
+                    "[bold yellow]Ollama needs to be installed.[/bold yellow]\n\n"
+                    "  [bold]Option A:[/bold] Auto-install (opens browser for Windows/Mac)\n"
+                    "  [bold]Option B:[/bold] Skip — visit ollama.com later",
+                    border_style="yellow",
+                    padding=(1, 2),
+                )
+            )
+            install_choice = Prompt.ask(
+                "  [bold]Install Ollama now?[/bold] [green]Y[/green]/n", default="y"
+            )
+            if install_choice.strip().lower() not in ("n", "no"):
+                _install_ollama(console)
+            else:
+                try:
+                    webbrowser.open("https://ollama.com/download")
+                except Exception:
+                    pass
+                console.print("  [dim]Visit ollama.com/download — then re-run hauba init.[/dim]")
+
+        ollama_models = [
+            "llama3.1",
+            "codellama",
+            "qwen2.5-coder",
+            "deepseek-coder-v2",
+        ]
         ollama_descs = [
-            "General purpose, fast",
-            "Specialized for code",
-            "Mixture of experts, capable",
-            "Code generation specialist",
+            "General purpose, fast (4.7 GB)",
+            "Specialized for code (3.8 GB)",
+            "Excellent coder (4.7 GB)",
+            "Best coding model (8.9 GB)",
         ]
         midx = select_menu(console, "Choose Ollama model:", ollama_models, ollama_descs)
         if midx < 0:
             midx = 0
         config.settings.llm.model = ollama_models[midx]
-        config.settings.llm.api_key = "ollama"
+        _pull_ollama_model(console, config.settings.llm.model)
+
     else:
-        console.print()
-        api_key = Prompt.ask(f"  [bold]{provider} API key[/bold]", password=True)
-        api_key = api_key.strip()
-        if provider == "openai" and api_key.startswith("sk-"):
-            for prefix in ("sk-proj-", "sk-"):
-                if api_key.startswith(prefix):
-                    second = api_key.find(prefix, len(prefix))
-                    if second > 0:
-                        api_key = api_key[:second]
+        provider_names = {
+            "anthropic": "Anthropic",
+            "openai": "OpenAI",
+            "deepseek": "DeepSeek",
+        }
+        provider_urls = {
+            "anthropic": "https://console.anthropic.com/settings/keys",
+            "openai": "https://platform.openai.com/api-keys",
+            "deepseek": "https://platform.deepseek.com/api_keys",
+        }
+        config.settings.llm.provider = provider
+
+        existing_key = config.get("llm.api_key") or ""
+        if existing_key:
+            console.print(
+                f"\n  [green]+[/green] Existing {provider_names.get(provider, provider)} key found."
+            )
+            reuse = Prompt.ask("  [bold]Use existing key?[/bold] [green]Y[/green]/n", default="y")
+            if reuse.strip().lower() in ("n", "no"):
+                existing_key = ""
+
+        if not existing_key:
+            console.print()
+            url = provider_urls.get(provider, "")
+            if url:
+                open_b = Prompt.ask(
+                    f"  [bold]Open "
+                    f"{provider_names.get(provider, provider)}"
+                    " in browser to get an API key?[/bold] [green]Y[/green]/n",
+                    default="y",
+                )
+                if open_b.strip().lower() not in ("n", "no"):
+                    try:
+                        webbrowser.open(url)
                         console.print(
-                            "  [yellow]Note: Detected duplicate paste — trimmed to single key.[/yellow]"
+                            "  [dim]Browser opened — sign in, create a key, paste below.[/dim]\n"
                         )
-                    break
-        config.settings.llm.api_key = api_key
+                    except Exception:
+                        console.print(f"  [yellow]Visit:[/yellow] {url}\n")
 
-        # Model selection with arrow keys
-        if provider == "anthropic":
-            models = [
-                "claude-sonnet-4-5-20250929",
-                "claude-opus-4-5-20250514",
-                "claude-haiku-4-5-20251001",
-            ]
-            model_descs = [
-                "Best balance of speed + quality",
-                "Most capable, slower",
-                "Fastest, budget-friendly",
-            ]
-        elif provider == "openai":
-            models = ["gpt-4o", "gpt-4o-mini", "o3"]
-            model_descs = ["Best balance", "Fast and cheap", "Advanced reasoning"]
-        else:
-            models = ["deepseek-chat", "deepseek-coder"]
-            model_descs = ["General purpose", "Code specialized"]
+            api_key = Prompt.ask(
+                f"  [bold]Paste your {provider_names.get(provider, provider)} API key[/bold]",
+                password=True,
+            )
+            api_key = api_key.strip()
 
-        midx = select_menu(console, "Choose model:", models, model_descs)
+            if provider == "openai" and api_key.startswith("sk-"):
+                for prefix in ("sk-proj-", "sk-"):
+                    if api_key.startswith(prefix):
+                        second = api_key.find(prefix, len(prefix))
+                        if second > 0:
+                            api_key = api_key[:second]
+                            console.print("  [yellow]Note: Trimmed duplicate paste.[/yellow]")
+                        break
+
+            config.settings.llm.api_key = api_key
+
+        model_map: dict[str, tuple[list[str], list[str]]] = {
+            "anthropic": (
+                [
+                    "claude-sonnet-4-5-20250929",
+                    "claude-opus-4-5-20250514",
+                    "claude-haiku-4-5-20251001",
+                ],
+                [
+                    "Best balance of speed + quality [recommended]",
+                    "Most capable, slower",
+                    "Fastest, budget-friendly",
+                ],
+            ),
+            "openai": (
+                ["gpt-4o", "gpt-4o-mini", "o3"],
+                ["Best balance [recommended]", "Fast and cheap", "Advanced reasoning"],
+            ),
+            "deepseek": (
+                ["deepseek-chat", "deepseek-coder"],
+                ["General purpose [recommended]", "Code specialized"],
+            ),
+        }
+        models, model_descs = model_map.get(provider, (["default"], ["Default model"]))
+        midx = select_menu(
+            console,
+            f"Choose {provider_names.get(provider, provider)} model:",
+            models,
+            model_descs,
+        )
         if midx < 0:
             midx = 0
         config.settings.llm.model = models[midx]
 
+        _test_and_show_llm_key(
+            console, provider, config.settings.llm.api_key, config.settings.llm.model
+        )
+
     config.save()
     console.print()
-    console.print("  [green]+[/green] Configuration saved to ~/.hauba/settings.json")
+    console.print("  [green]+[/green] LLM config saved")
 
-    # Test Copilot SDK availability
+    # ── Step 2: WhatsApp (optional) ───────────────────────────────────────
+    console.print()
+    console.print("  [bold cyan]Step 2/3 — WhatsApp Notifications (optional)[/bold cyan]")
+    console.print("  [dim]Receive task results on WhatsApp. Free via Twilio Sandbox.[/dim]\n")
+    if Prompt.ask(
+        "  [bold]Set up WhatsApp?[/bold] y/[red]N[/red]", default="n"
+    ).strip().lower() in ("y", "yes"):
+        setup_whatsapp()
+        console.print()
+        owner_wa = Prompt.ask(
+            "  [bold]Your WhatsApp number[/bold] "
+            "[dim](with country code, e.g. +9779812345678 — makes you the bot owner)[/dim]",
+            default=config.get("whatsapp.owner_number") or "",
+        ).strip()
+        if owner_wa:
+            config.set("whatsapp.owner_number", owner_wa)
+            console.print(
+                "  [green]+[/green] Owner number saved — you control the bot from WhatsApp."
+            )
+    else:
+        console.print("  [dim]Skipped. Run: hauba setup whatsapp[/dim]")
+
+    # ── Step 3: Email (optional) ──────────────────────────────────────────
+    console.print()
+    console.print("  [bold cyan]Step 3/3 — Email Delivery (optional)[/bold cyan]")
+    console.print(
+        "  [dim]Send emails from Hauba. Free via Brevo (300/day, no credit card).[/dim]\n"
+    )
+    if Prompt.ask("  [bold]Set up email?[/bold] y/[red]N[/red]", default="n").strip().lower() in (
+        "y",
+        "yes",
+    ):
+        setup_email()
+    else:
+        console.print("  [dim]Skipped. Run: hauba setup email[/dim]")
+
+    config.save()
+
+    # ── Copilot SDK check ─────────────────────────────────────────────────
+    console.print()
     console.print("  [dim]Checking Copilot SDK...[/dim]")
     try:
         import copilot  # noqa: F401
@@ -221,21 +407,150 @@ def init() -> None:
     except Exception:
         console.print("  [green]+[/green] Engine check complete")
 
+    # ── Summary ───────────────────────────────────────────────────────────
+    wa_num = config.get("whatsapp.to_number") or ""
+    email_key = config.get("email.brevo_api_key") or ""
     console.print()
     console.print(
         Panel(
-            f"[bold green]Hauba is ready![/bold green]\n\n"
-            f"  Owner:    {name}\n"
-            f"  Provider: {provider}\n"
-            f"  Model:    {config.settings.llm.model}\n\n"
-            f"[bold]Next steps:[/bold]\n\n"
-            f'  [green]1.[/green] [bold]hauba run "build me a SaaS dashboard"[/bold]\n'
-            f"  [green]2.[/green] [bold]hauba setup whatsapp[/bold]   [dim]# Get results on WhatsApp[/dim]\n"
-            f"  [green]3.[/green] [bold]hauba doctor[/bold]           [dim]# Check system health[/dim]",
+            f"[bold green]Hauba is ready, {name}![/bold green]\n\n"
+            f"  AI Provider : {config.settings.llm.provider} / {config.settings.llm.model}\n"
+            f"  WhatsApp    : {'✅ ' + wa_num if wa_num else '❌ not set up'}\n"
+            f"  Email       : {'✅ ready' if email_key else '❌ not set up'}\n\n"
+            "[bold]Start building:[/bold]\n\n"
+            '  [green]hauba run[/green] "build me a SaaS dashboard with auth"\n'
+            '  [green]hauba run[/green] "scrape top 100 products from Amazon"\n'
+            '  [green]hauba run[/green] "train an image classifier on my dataset"\n\n'
+            "[dim]Need help?  hauba doctor | hauba --help[/dim]",
             border_style="green",
             padding=(1, 2),
         )
     )
+
+
+def _check_ollama_running() -> bool:
+    """Return True if Ollama HTTP API responds on localhost:11434."""
+    try:
+        import urllib.request
+
+        urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+        return True
+    except Exception:
+        return False
+
+
+def _install_ollama(con: Console) -> None:
+    """Attempt to install Ollama on the current platform."""
+    import subprocess
+
+    con.print("  [dim]Installing Ollama...[/dim]")
+    try:
+        if sys.platform == "win32":
+            con.print("  [yellow]Windows:[/yellow] Opening ollama.com/download in browser...")
+            webbrowser.open("https://ollama.com/download/windows")
+            con.print("  [dim]Download and run the installer, then re-run hauba init.[/dim]")
+        elif sys.platform == "darwin":
+            con.print("  [yellow]Mac:[/yellow] Opening ollama.com/download in browser...")
+            webbrowser.open("https://ollama.com/download/mac")
+            con.print("  [dim]Download and run the .dmg, then re-run hauba init.[/dim]")
+        else:
+            result = subprocess.run(
+                "curl -fsSL https://ollama.com/install.sh | sh",
+                shell=True,
+                timeout=120,
+            )
+            if result.returncode == 0:
+                con.print("  [green]+[/green] Ollama installed!")
+            else:
+                con.print("  [yellow]Install failed. Visit ollama.com/download[/yellow]")
+    except Exception as exc:
+        con.print(f"  [yellow]Auto-install failed: {exc}. Visit ollama.com/download[/yellow]")
+
+
+def _pull_ollama_model(con: Console, model: str) -> None:
+    """Pull an Ollama model."""
+    import subprocess
+
+    con.print(f"  [dim]Pulling {model}...[/dim]")
+    try:
+        result = subprocess.run(
+            ["ollama", "pull", model],
+            timeout=600,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            con.print(f"  [green]+[/green] Model {model} ready")
+        else:
+            con.print(f"  [yellow]Pull failed. Run: ollama pull {model}[/yellow]")
+    except FileNotFoundError:
+        con.print(f"  [yellow]Ollama not in PATH. Run: ollama pull {model}[/yellow]")
+    except Exception as exc:
+        con.print(f"  [yellow]Pull error: {exc}. Run: ollama pull {model}[/yellow]")
+
+
+def _test_and_show_llm_key(con: Console, provider: str, api_key: str, model: str) -> None:
+    """Make a minimal API call to verify the key and print pass/fail."""
+    if not api_key or api_key == "ollama":
+        return
+
+    con.print("  [dim]Testing API key...[/dim]")
+    try:
+        import httpx
+
+        headers: dict[str, str] = {}
+        url = ""
+        payload: dict = {}
+
+        if provider == "anthropic":
+            url = "https://api.anthropic.com/v1/messages"
+            headers = {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+            payload = {
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 5,
+                "messages": [{"role": "user", "content": "hi"}],
+            }
+        elif provider == "openai":
+            url = "https://api.openai.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": "gpt-4o-mini",
+                "max_tokens": 5,
+                "messages": [{"role": "user", "content": "hi"}],
+            }
+        elif provider == "deepseek":
+            url = "https://api.deepseek.com/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": "deepseek-chat",
+                "max_tokens": 5,
+                "messages": [{"role": "user", "content": "hi"}],
+            }
+
+        if url:
+            r = httpx.post(url, json=payload, headers=headers, timeout=15)
+            if r.status_code in (200, 201):
+                con.print("  [green]+[/green] API key works!")
+            elif r.status_code == 401:
+                con.print(
+                    "  [red]✗ API key rejected (401).[/red] Double-check and re-run hauba init."
+                )
+            elif r.status_code == 429:
+                con.print("  [yellow]✓ Key valid (rate-limited on test — that's fine).[/yellow]")
+            else:
+                con.print(f"  [yellow]API returned {r.status_code} — key may still work.[/yellow]")
+    except Exception:
+        con.print("  [dim]Key test skipped (no network). Continuing.[/dim]")
 
 
 @app.command()

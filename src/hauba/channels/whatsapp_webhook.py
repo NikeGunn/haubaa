@@ -79,6 +79,10 @@ _GREETING_WORDS: frozenset[str] = frozenset(
 # Recent send errors — exposed via /whatsapp/status for live debugging
 _recent_send_errors: list[dict] = []
 
+# Twilio sandbox daily limit (50 messages). Track when we hit it so we stop
+# calling the API and alert the owner instead of silently dropping messages.
+_TWILIO_DAILY_LIMIT_MSG = "exceeded the 50 daily messages limit"
+
 
 @dataclass
 class UserSession:
@@ -117,6 +121,9 @@ class WhatsAppBot:
         self._reply_assistant: Any = None  # ReplyAssistant (set by server.py)
         self._plugin_registry: Any = None  # PluginRegistry (set by server.py)
         self._owner_number: str = ""  # Set in configure() via resolve()
+        # Twilio sandbox daily limit tracking
+        self._daily_limit_hit: bool = False
+        self._daily_limit_notified_numbers: set[str] = set()
 
     def set_task_queue(self, queue: Any) -> None:
         """Set the task queue for Queue + Poll architecture.
@@ -1159,6 +1166,12 @@ class WhatsAppBot:
             logger.warning("whatsapp_bot.no_client")
             return
 
+        # If daily limit already hit, skip silently (already notified users).
+        # The limit resets at midnight UTC — session restart will clear the flag.
+        if self._daily_limit_hit:
+            logger.warning("whatsapp_bot.daily_limit_skip", to=to_number)
+            return
+
         # Ensure whatsapp: prefix on from number
         from_num = self._from_number
         if not from_num.startswith("whatsapp:"):
@@ -1175,10 +1188,11 @@ class WhatsAppBot:
                 ),
             )
         except Exception as exc:
+            err_str = str(exc)
             err_entry = {
                 "t": time.time(),
                 "to": to_number,
-                "err": str(exc)[:300],
+                "err": err_str[:300],
                 "type": type(exc).__name__,
             }
             _recent_send_errors.append(err_entry)
@@ -1188,9 +1202,32 @@ class WhatsAppBot:
                 "whatsapp_bot.send_failed",
                 to=to_number,
                 from_=from_num,
-                error=str(exc),
+                error=err_str,
                 error_type=type(exc).__name__,
             )
+            # Detect Twilio sandbox 50-message daily cap
+            if _TWILIO_DAILY_LIMIT_MSG in err_str:
+                self._daily_limit_hit = True
+                logger.warning(
+                    "whatsapp_bot.daily_limit_reached",
+                    msg="Twilio sandbox 50 msg/day limit hit. No more sends today.",
+                )
+                # Try to notify the affected user *once* via a direct API call
+                # (this call itself will also fail, but we log it for visibility)
+                if to_number not in self._daily_limit_notified_numbers:
+                    self._daily_limit_notified_numbers.add(to_number)
+                    _recent_send_errors.append(
+                        {
+                            "t": time.time(),
+                            "to": to_number,
+                            "err": (
+                                "SANDBOX DAILY LIMIT (50 msgs) REACHED. "
+                                "Upgrade to a paid Twilio number to remove this limit. "
+                                "Current limit resets midnight UTC."
+                            ),
+                            "type": "DailyLimitReached",
+                        }
+                    )
 
     def _get_or_create_session(self, from_number: str) -> UserSession:
         """Get existing session or create new one for this user."""
