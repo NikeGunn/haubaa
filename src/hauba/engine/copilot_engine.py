@@ -143,6 +143,9 @@ class CopilotEngine:
         self._plan_review_handler: PlanReviewCallback | None = None
         self._delivery_handler: DeliveryCallback | None = None
 
+        # Browser tool instance (reused across tool calls)
+        self._browser_tool: Any = None
+
         # Plan tracking
         self._plan_state: PlanState | None = None
         self._plan_detected = asyncio.Event()
@@ -468,6 +471,11 @@ class CopilotEngine:
             "buffer_exhaustion_threshold": 0.95,
         }
 
+        # Inject Hauba custom tools for full internet and system access
+        custom_tools = self._build_custom_tools()
+        if custom_tools:
+            config["tools"] = custom_tools
+
         # Wire up the on_user_input_request handler for human escalation
         if self._user_input_handler:
             handler = self._user_input_handler
@@ -591,32 +599,41 @@ Common packages by domain:
 - Web scraping: beautifulsoup4, requests, lxml
 - Automation: click, typer, schedule
 
-### WEB ACCESS (INTERNET BROWSING)
+### WEB ACCESS (INTERNET BROWSING) — FULL POWER
 
-You CAN access the internet. You have FULL web access through your tools. Use these approaches:
+You have FULL unrestricted internet access through dedicated tools. Use them liberally:
 
-1. **Web Search**: Use bash to search the web:
-   `curl -s "https://html.duckduckgo.com/html/" -d "q=your+search+query" | python3 -c "import sys,re; print(re.sub(r'<[^>]+>',' ',sys.stdin.read()))"`
-   Or use Python with httpx/requests for structured searches.
+1. **hauba_web_search**: Search the web (DuckDuckGo, free, no API key).
+   Use this FIRST to research anything before implementing.
 
-2. **Fetch Web Pages**: Read any URL:
-   `curl -sL "https://example.com" | head -200`
-   Or use Python: `python3 -c "import httpx; r=httpx.get('URL'); print(r.text[:5000])"`
+2. **hauba_web_fetch**: Read ANY URL — docs, APIs, GitHub repos, web pages.
+   Converts HTML to readable text automatically.
 
-3. **API Calls**: Make HTTP requests to any public API:
-   `curl -s "https://api.github.com/repos/owner/repo" | python3 -m json.tool`
+3. **hauba_browser**: Full Playwright browser automation with persistent sessions.
+   Navigate, click, type, extract, screenshot, scroll, run JavaScript.
+   Sessions persist cookies/state. Use for dynamic sites, login flows, SPAs.
 
-4. **Download Files**: Download assets, packages, data files:
-   `curl -LO "https://example.com/file.zip"` or `wget`
+4. **hauba_send_email**: Send emails via Brevo API (free, 300/day).
+   Use to send notifications, reports, or results.
 
-5. **Research**: Look up documentation, Stack Overflow, GitHub repos before coding.
+5. **Bash tools**: You can also use curl, wget, httpx, requests via bash.
+   `curl -LO "https://example.com/file.zip"` for downloads.
 
-ALWAYS research before implementing unfamiliar technologies. Use the internet to:
-- Look up API documentation and examples
-- Find best practices and patterns
-- Download dependencies and assets
+ALWAYS research before implementing unfamiliar technologies:
+- Search for API documentation and examples
+- Fetch and read official docs before coding
+- Download dependencies, assets, and data files
 - Verify solutions against real documentation
-- Fetch data from URLs the user provides
+- Browse dynamic websites when static fetch isn't enough
+
+### DESKTOP APPLICATION CONTROL
+
+You can control desktop applications through bash and Python:
+- **Blender**: Use `blender --background --python script.py` for 3D rendering
+- **GIMP**: Use `gimp -i -b '(script-fu-command)'` for image editing
+- **FFmpeg**: Use `ffmpeg` for video/audio processing
+- **LibreOffice**: Use `libreoffice --headless --convert-to` for document conversion
+- Any CLI tool installed on the user's machine is available to you
 
 ### PERSISTENT MEMORY
 
@@ -644,6 +661,256 @@ If you discover something important, write it down so you can reference it later
             prompt += f"\n### SKILL GUIDANCE\n\n{self._skill_context}\n"
 
         return prompt
+
+    def _build_custom_tools(self) -> list[Any]:
+        """Build custom tools that give CopilotEngine full internet and system access.
+
+        These tools extend the Copilot SDK's built-in tools with Hauba's
+        web search, web fetch, and browser automation capabilities.
+        The agent can use these to research, browse websites, scrape data,
+        and interact with any web service — all inside the sandbox.
+        """
+        tools: list[Any] = []
+
+        try:
+            from copilot import Tool
+        except ImportError:
+            return tools
+
+        # Helper: extract params from ToolInvocation (SDK passes an object, not a dict)
+        def _get_params(invocation: Any) -> dict[str, Any]:
+            if isinstance(invocation, dict):
+                return invocation
+            if hasattr(invocation, "input"):
+                inp = invocation.input
+                return inp if isinstance(inp, dict) else {}
+            if hasattr(invocation, "params"):
+                p = invocation.params
+                return p if isinstance(p, dict) else {}
+            return {}
+
+        # Helper: wrap result as ToolResult if needed by the SDK
+        def _wrap_result(text: str) -> Any:
+            try:
+                from copilot import ToolResult as CopilotToolResult
+
+                return CopilotToolResult(text)
+            except (ImportError, TypeError):
+                return text
+
+        # Tool 1: Web Search (DuckDuckGo — no API key, free)
+        async def _handle_web_search(invocation: Any) -> Any:
+            params = _get_params(invocation)
+            try:
+                from hauba.tools.web import WebSearchTool
+
+                tool = WebSearchTool()
+                result = await tool.execute(
+                    query=params.get("query", ""),
+                    num_results=params.get("num_results", 5),
+                )
+                text = result.output if result.success else f"Search failed: {result.error}"
+            except Exception as exc:
+                text = f"Search error: {exc}"
+            return _wrap_result(text)
+
+        tools.append(
+            Tool(
+                name="hauba_web_search",
+                description=(
+                    "Search the web using DuckDuckGo. Returns titles, snippets, and URLs. "
+                    "Use this to research technologies, find documentation, look up APIs, "
+                    "and discover solutions before implementing."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query",
+                        },
+                        "num_results": {
+                            "type": "integer",
+                            "description": "Number of results (default: 5)",
+                        },
+                    },
+                    "required": ["query"],
+                },
+                handler=_handle_web_search,
+            )
+        )
+
+        # Tool 2: Web Fetch (read any URL as text)
+        async def _handle_web_fetch(invocation: Any) -> Any:
+            params = _get_params(invocation)
+            try:
+                from hauba.tools.fetch import WebFetchTool
+
+                tool = WebFetchTool()
+                result = await tool.execute(
+                    url=params.get("url", ""),
+                    extract_text=params.get("extract_text", True),
+                )
+                text = result.output if result.success else f"Fetch failed: {result.error}"
+            except Exception as exc:
+                text = f"Fetch error: {exc}"
+            return _wrap_result(text)
+
+        tools.append(
+            Tool(
+                name="hauba_web_fetch",
+                description=(
+                    "Fetch any URL and return its content as readable text. "
+                    "Supports HTML (converted to text), JSON, and plain text. "
+                    "Use this to read documentation, API responses, GitHub repos, "
+                    "and any web page content."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL to fetch",
+                        },
+                        "extract_text": {
+                            "type": "boolean",
+                            "description": "Extract readable text from HTML (default: true)",
+                        },
+                    },
+                    "required": ["url"],
+                },
+                handler=_handle_web_fetch,
+            )
+        )
+
+        # Tool 3: Browser Automation (Playwright — full web interaction)
+        async def _handle_browser(invocation: Any) -> Any:
+            params = _get_params(invocation)
+            try:
+                from hauba.tools.browser import BrowserTool
+
+                if self._browser_tool is None:
+                    self._browser_tool = BrowserTool(headless=True, stealth=True)
+
+                result = await self._browser_tool.execute(**params)
+                text = result.output if result.success else f"Browser error: {result.error}"
+            except Exception as exc:
+                text = f"Browser error: {exc}"
+            return _wrap_result(text)
+
+        tools.append(
+            Tool(
+                name="hauba_browser",
+                description=(
+                    "Full browser automation with persistent sessions. "
+                    "Actions: navigate (url), click (selector), type (selector, text), "
+                    "extract (selector — get text), screenshot (path), wait (selector), "
+                    "scroll (direction), evaluate (JavaScript). "
+                    "Sessions persist cookies and state across actions. "
+                    "Use this to interact with web apps, fill forms, scrape dynamic content, "
+                    "and automate any website interaction."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": [
+                                "navigate",
+                                "click",
+                                "type",
+                                "extract",
+                                "screenshot",
+                                "wait",
+                                "scroll",
+                                "evaluate",
+                            ],
+                            "description": "Browser action to perform",
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "URL for navigate action",
+                        },
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector for click/type/extract/wait",
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Text for type action",
+                        },
+                        "script": {
+                            "type": "string",
+                            "description": "JavaScript for evaluate action",
+                        },
+                        "direction": {
+                            "type": "string",
+                            "description": "Scroll direction: up, down, top, bottom",
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "File path for screenshot action",
+                        },
+                    },
+                    "required": ["action"],
+                },
+                handler=_handle_browser,
+            )
+        )
+
+        # Tool 4: Send Email (Brevo API — free)
+        async def _handle_send_email(invocation: Any) -> Any:
+            params = _get_params(invocation)
+            try:
+                from hauba.services.email import EmailService
+
+                svc = EmailService()
+                if not svc.configure():
+                    return _wrap_result(
+                        "Email not configured. Set HAUBA_EMAIL_API_KEY (Brevo, free) "
+                        "and HAUBA_EMAIL_FROM environment variables."
+                    )
+                success = await svc.send(
+                    to=params.get("to", ""),
+                    subject=params.get("subject", ""),
+                    body=params.get("body", ""),
+                )
+                text = "Email sent successfully." if success else "Failed to send email."
+            except Exception as exc:
+                text = f"Email error: {exc}"
+            return _wrap_result(text)
+
+        tools.append(
+            Tool(
+                name="hauba_send_email",
+                description=(
+                    "Send an email via Brevo API (free, 300/day). "
+                    "Use this to send notifications, reports, or results to the user."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "to": {
+                            "type": "string",
+                            "description": "Recipient email address",
+                        },
+                        "subject": {
+                            "type": "string",
+                            "description": "Email subject line",
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "Email body text",
+                        },
+                    },
+                    "required": ["to", "subject", "body"],
+                },
+                handler=_handle_send_email,
+            )
+        )
+
+        logger.info("engine.custom_tools_loaded", count=len(tools))
+        return tools
 
     def _handle_session_event(self, event: Any) -> None:
         """Handle events from the Copilot session and forward as EngineEvents."""

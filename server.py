@@ -129,13 +129,15 @@ def create_server_app():
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import HTMLResponse, Response
 
+    from hauba import __version__
+
     app = FastAPI(
         title="Hauba AI Engineer",
         description=(
             "AI Software Engineer as a Service. BYOK — bring your own API key. "
             "Powered by GitHub Copilot SDK."
         ),
-        version="0.7.1",
+        version=__version__,
         docs_url="/docs",
         redoc_url="/redoc",
     )
@@ -487,6 +489,9 @@ def create_server_app():
                 from hauba.services.reply_assistant import ReplyAssistant
 
                 _reply_assistant = ReplyAssistant()
+                _owner_wa = os.environ.get("HAUBA_OWNER_WHATSAPP", "")
+                if _owner_wa:
+                    _reply_assistant.set_owner_number(_owner_wa)
                 _wa_bot._reply_assistant = _reply_assistant
                 print("[hauba] Reply assistant wired to WhatsApp bot.")
             except ImportError:

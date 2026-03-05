@@ -2,4 +2,6 @@
 
 from __future__ import annotations
 
-__version__ = "0.7.1"
+from importlib.metadata import version as _pkg_version
+
+__version__: str = _pkg_version("hauba")

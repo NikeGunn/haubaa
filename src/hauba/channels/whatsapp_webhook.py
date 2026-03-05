@@ -49,7 +49,7 @@ GREETING = (
     "  /status   - Quick status check\n"
     "  /web URL  - Fetch a web page\n"
     "  /email    - Send an email\n"
-    "  /reply    - Set auto-reply\n"
+    "  /reply    - Auto-reply (setup/on/off/briefing)\n"
     "  /usage    - Cost summary\n"
     "  /plugins  - List plugins\n"
     "  /feedback - Send feedback\n"
@@ -107,6 +107,7 @@ class WhatsAppBot:
         self._email_service: Any = None  # EmailService (set by server.py)
         self._reply_assistant: Any = None  # ReplyAssistant (set by server.py)
         self._plugin_registry: Any = None  # PluginRegistry (set by server.py)
+        self._owner_number: str = os.environ.get("HAUBA_OWNER_WHATSAPP", "")
 
     def set_task_queue(self, queue: Any) -> None:
         """Set the task queue for Queue + Poll architecture.
@@ -268,7 +269,21 @@ class WhatsAppBot:
                 await self._send_status(from_number)
             return
 
-        # Check auto-reply first
+        # Owner presence commands (natural language)
+        if self._reply_assistant and self._is_owner(from_number):
+            try:
+                from hauba.services.reply_assistant import detect_presence_command
+
+                cmd_type, _ = detect_presence_command(body)
+                if cmd_type:
+                    reply = await self._reply_assistant.handle_owner_command(body)
+                    if reply:
+                        await self._send_reply(from_number, reply)
+                        return
+            except Exception:
+                pass
+
+        # Check auto-reply (for non-owner messages when enabled)
         if self._reply_assistant:
             try:
                 auto_reply = await self._reply_assistant.handle_message(from_number, body)
@@ -446,6 +461,16 @@ class WhatsAppBot:
             "crud",
             "auth",
             "stripe",
+            "blender",
+            "render",
+            "3d model",
+            "game",
+            "pygame",
+            "godot",
+            "fine.tune",
+            "train model",
+            "llm",
+            "huggingface",
         ]
         pattern = r"\b(" + "|".join(re.escape(kw) for kw in build_keywords) + r")\b"
         return bool(re.search(pattern, lower))
@@ -761,7 +786,13 @@ class WhatsAppBot:
         if not self._email_service or not self._email_service.is_configured:
             await self._send_reply(
                 from_number,
-                "Email not configured. Server admin needs to set HAUBA_SMTP_* env vars.",
+                "Email not configured.\n\n"
+                "Set up free email (Brevo — 300/day, no credit card):\n"
+                "  1. Sign up at brevo.com (free)\n"
+                "  2. Get your API key from Settings > SMTP & API\n"
+                "  3. Set env vars:\n"
+                "     HAUBA_EMAIL_API_KEY=your_brevo_key\n"
+                "     HAUBA_EMAIL_FROM=you@yourdomain.com",
             )
             return
 
@@ -792,20 +823,61 @@ class WhatsAppBot:
         else:
             await self._send_reply(from_number, "❌ Failed to send email. Check server logs.")
 
+    def _is_owner(self, from_number: str) -> bool:
+        """Check if the sender is the configured owner."""
+        if not self._owner_number:
+            return False
+        s = from_number.replace("whatsapp:", "").strip()
+        o = self._owner_number.replace("whatsapp:", "").strip()
+        return s == o
+
     async def _handle_reply_cmd(self, from_number: str, args: str) -> None:
-        """Set or disable auto-reply."""
+        """Set or disable auto-reply. Supports /reply setup for onboarding."""
         if not self._reply_assistant:
             await self._send_reply(from_number, "Auto-reply service not available.")
             return
 
+        # /reply setup — start onboarding
+        if args.lower().strip() == "setup":
+            msg = self._reply_assistant.start_onboarding()
+            await self._send_reply(from_number, msg)
+            return
+
+        # /reply off — disable
         if not args or args.lower() == "off":
             await self._reply_assistant.set_enabled(False)
             await self._send_reply(from_number, "Auto-reply disabled.")
             return
 
+        # /reply on — enable (if onboarded) or start onboarding
+        if args.lower() == "on":
+            if self._reply_assistant.is_onboarded:
+                from hauba.services.reply_assistant import OwnerPresence
+
+                msg = await self._reply_assistant.set_presence(OwnerPresence.AWAY)
+                await self._send_reply(from_number, msg)
+            else:
+                msg = self._reply_assistant.start_onboarding()
+                await self._send_reply(from_number, msg)
+            return
+
+        # /reply briefing — get morning briefing
+        if args.lower().strip() in ("briefing", "report", "summary"):
+            briefing = await self._reply_assistant.get_briefing()
+            await self._send_reply(from_number, briefing)
+            return
+
+        # Check if this is an onboarding answer
+        if not self._reply_assistant.is_onboarded:
+            next_q = await self._reply_assistant.handle_onboarding(args)
+            if next_q:
+                await self._send_reply(from_number, next_q)
+                return
+
+        # Simple auto-reply message (backward compatible)
         await self._reply_assistant.set_auto_reply(args)
         await self._reply_assistant.set_enabled(True)
-        await self._send_reply(from_number, f"✅ Auto-reply set: _{args[:100]}_")
+        await self._send_reply(from_number, f"Auto-reply set: _{args[:100]}_")
 
     async def _handle_usage(self, from_number: str) -> None:
         """Show cost usage summary."""

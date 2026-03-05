@@ -1083,6 +1083,16 @@ def agent(
         "-o",
         help="Owner ID to poll for (default: from config or WhatsApp number)",
     ),
+    install: bool = typer.Option(
+        False,
+        "--install",
+        help="Install daemon to auto-start on login (no need to manually run hauba agent)",
+    ),
+    uninstall: bool = typer.Option(
+        False,
+        "--uninstall",
+        help="Remove auto-start daemon registration",
+    ),
 ) -> None:
     """Start the Hauba agent daemon — polls server for tasks and builds locally.
 
@@ -1093,15 +1103,60 @@ def agent(
     The server never sees your API key. Tasks are built here, results
     are sent back to the server for delivery to the originating channel.
 
-    Run this 24/7 to receive and execute tasks from any channel.
+    Auto-start:
+        hauba agent --install               # Auto-start on login (set it and forget it)
+        hauba agent --uninstall             # Remove auto-start
 
-    Examples:
+    Manual:
         hauba agent                           # Default: poll hauba.tech
         hauba agent --server http://localhost:8080  # Local server
         hauba agent --interval 30             # Poll every 30s
         hauba agent --owner "whatsapp:+1234"  # Specific owner ID
     """
     _check_init()
+
+    if install:
+        from hauba.daemon.autostart import install_autostart, is_installed
+
+        if is_installed():
+            console.print("  [yellow]Hauba agent is already installed as auto-start.[/yellow]")
+            console.print("  [dim]Use --uninstall to remove it first.[/dim]")
+            return
+
+        console.print("  [cyan]Installing Hauba agent as auto-start service...[/cyan]")
+        success = install_autostart(
+            server_url=server_url,
+            workspace=workspace,
+            owner_id=owner_id,
+            poll_interval=poll_interval,
+        )
+        if success:
+            console.print(
+                Panel(
+                    "[bold green]Hauba Agent Auto-Start Installed[/bold green]\n\n"
+                    "The daemon will start automatically when you log in.\n"
+                    "No need to open a terminal or run `hauba agent`.\n\n"
+                    "Just send tasks via WhatsApp — they'll execute on this machine.\n\n"
+                    "  [dim]To remove: hauba agent --uninstall[/dim]",
+                    border_style="green",
+                    padding=(1, 2),
+                )
+            )
+        else:
+            console.print("  [red]Failed to install auto-start. Check logs.[/red]")
+        return
+
+    if uninstall:
+        from hauba.daemon.autostart import uninstall_autostart
+
+        console.print("  [cyan]Removing Hauba agent auto-start...[/cyan]")
+        success = uninstall_autostart()
+        if success:
+            console.print("  [green]Auto-start removed.[/green]")
+        else:
+            console.print("  [red]Failed to remove auto-start.[/red]")
+        return
+
     _configure_logging_to_file()
     asyncio.run(_run_agent(server_url, poll_interval, workspace, owner_id))
 

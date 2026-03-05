@@ -57,7 +57,9 @@ class WebUI:
         return self._app
 
     def _create_app(self) -> Any:
-        app = FastAPI(title="Hauba AI Dashboard", version="1.0.0")
+        from hauba import __version__
+
+        app = FastAPI(title="Hauba AI Dashboard", version=__version__)
 
         @app.get("/", response_class=HTMLResponse)
         async def dashboard() -> str:

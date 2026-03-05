@@ -231,13 +231,15 @@ async def _run_task(task_id: str, request: TaskRequest) -> None:
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    from hauba import __version__
+
     app = FastAPI(
         title="Hauba AI Engineer API",
         description=(
             "AI Software Engineer as a Service. BYOK — bring your own API key. "
             "The AI agent plans, codes, tests, and delivers. Zero hallucinations."
         ),
-        version="0.5.0",
+        version=__version__,
         docs_url="/docs",
         redoc_url="/redoc",
     )
@@ -397,7 +399,7 @@ def create_app() -> FastAPI:
     @app.get("/api/version")
     async def api_version() -> dict[str, Any]:
         return {
-            "version": "v0.2.0",
+            "version": f"v{__version__}",
             "label": "AI Engineer API",
             "prerelease": False,
         }

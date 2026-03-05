@@ -149,7 +149,9 @@ class TestHandleReply:
     async def test_set_reply(self, bot: WhatsAppBot) -> None:
         from hauba.services.reply_assistant import ReplyAssistant
 
-        bot._reply_assistant = ReplyAssistant()
+        assistant = ReplyAssistant()
+        assistant._profile.onboarding_complete = True
+        bot._reply_assistant = assistant
         await bot._handle_reply_cmd("whatsapp:+1234", "Out of office")
         assert "set" in bot._send_reply.call_args[0][1].lower()
 
