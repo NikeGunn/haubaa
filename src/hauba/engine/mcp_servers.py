@@ -47,7 +47,7 @@ def create_playwright_mcp(
         logger.warning("mcp.npx_not_found", hint="Install Node.js to enable browser automation")
         return None
 
-    args = ["@playwright/mcp@latest"]
+    args = ["-y", "@playwright/mcp@latest"]
     if headless:
         args.append("--headless")
     args.extend(["--viewport-size", viewport])

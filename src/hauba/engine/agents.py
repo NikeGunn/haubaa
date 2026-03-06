@@ -2,7 +2,7 @@
 
 Creates the multi-agent team powered by OpenAI Agents SDK:
 - DirectorAgent: Plans, delegates, coordinates
-- CoderAgent: Writes code via ShellTool + ApplyPatchTool
+- CoderAgent: Writes code via shell + file tools
 - BrowserAgent: Web automation via Playwright MCP
 - ReviewerAgent: Code review and testing
 """
@@ -25,7 +25,7 @@ logger = structlog.get_logger()
 
 
 async def _run_shell(command: str) -> str:
-    """Shell executor for ShellTool — runs commands in subprocess."""
+    """Run a shell command in a local subprocess."""
     import asyncio
 
     try:
@@ -33,7 +33,7 @@ async def _run_shell(command: str) -> str:
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=None,  # Use current working directory
+            cwd=None,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
         output = stdout.decode("utf-8", errors="replace")
@@ -43,19 +43,26 @@ async def _run_shell(command: str) -> str:
                 output += f"\nSTDERR:\n{err}"
         if proc.returncode != 0:
             output += f"\n[exit code: {proc.returncode}]"
-        return output[:50000]  # Limit output size
+        return output[:50000]
     except TimeoutError:
         return "[Command timed out after 120 seconds]"
     except Exception as exc:
         return f"[Shell error: {exc}]"
 
 
-def _create_shell_tool() -> Any | None:
-    """Create a ShellTool with our custom executor."""
+def _build_shell_tool() -> Any | None:
+    """Create a shell tool as a @function_tool (works with all models)."""
     try:
-        from agents import ShellTool
+        from agents import function_tool
 
-        return ShellTool(executor=_run_shell)
+        @function_tool
+        async def shell(command: str) -> str:
+            """Run a shell command on the local machine. Use this to execute code,
+            install packages, run tests, read/write files, use git, and perform
+            any system operations. Returns stdout, stderr, and exit code."""
+            return await _run_shell(command)
+
+        return shell
     except ImportError:
         return None
 
@@ -92,7 +99,7 @@ def create_agent_team(
     filesystem_servers = [s for s in mcp_servers if getattr(s, "name", "") == "filesystem"]
 
     # --- Build tools ---
-    shell_tool = _create_shell_tool()
+    shell_tool = _build_shell_tool()
     function_tools = build_function_tools()
 
     # --- CoderAgent ---

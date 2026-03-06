@@ -170,7 +170,7 @@ class AgentEngine:
             from agents import Runner
 
             result = await asyncio.wait_for(
-                Runner.run(self._director, instruction),
+                Runner.run(self._director, instruction, max_turns=50),
                 timeout=timeout,
             )
 
@@ -217,7 +217,7 @@ class AgentEngine:
         try:
             from agents import Runner
 
-            result = Runner.run_streamed(self._director, instruction)
+            result = Runner.run_streamed(self._director, instruction, max_turns=50)
 
             async for event in result.stream_events():
                 event_type = getattr(event, "type", str(type(event).__name__))
