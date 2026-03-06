@@ -769,7 +769,7 @@
         .then(function(info) {
           if (!info || !info.version) return;
           var el = document.getElementById('versionTag');
-          if (el) { el.textContent = info.version + ' \\u2014 ' + info.label; el.style.visibility = ''; }
+          if (el) { el.textContent = info.version + ' — ' + info.label; el.style.visibility = ''; }
         })
         .catch(function() {});
     })();
