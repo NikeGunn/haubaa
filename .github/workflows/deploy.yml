@@ -62,7 +62,7 @@ jobs:
             // If Railway never created one, create it ourselves.
             if (!deploymentId) {
               console.log('Railway deployment not found — creating our own.');
-              const { data } = await github.rest.deployments.create({
+              const { data } = await github.rest.repos.createDeployment({
                 ...repo,
                 ref:                    sha,
                 environment:            env,
