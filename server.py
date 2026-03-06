@@ -642,6 +642,8 @@ LANDING_PAGE = """\
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
+  <!-- Blocking theme init: runs before CSS renders to prevent FOUC -->
+  <script>!function(){var s=localStorage.getItem('hauba-theme'),t=s==='light'||s==='dark'?s:window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';document.documentElement.setAttribute('data-theme',t);document.documentElement.classList.add('theme-init')}()</script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hauba — The World's First Autonomous AI Engineering Workforce</title>
   <meta name="description" content="Deploy an autonomous AI engineering team with one command. Builds full-stack apps, edits videos, processes data, ships production code — no humans required. Open-source. BYOK. Powered by OpenAI Agents SDK.">
@@ -698,6 +700,8 @@ LANDING_PAGE = """\
       --fn-color: #1565c0;
       --accent-text: #fff;
     }
+    /* Suppress all transitions during initial theme load — prevents knob animation flash */
+    html.theme-init * { transition: none !important; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html { scroll-behavior: smooth; }
     body {
@@ -1313,13 +1317,40 @@ LANDING_PAGE = """\
   <script>
     (function() {
       var html = document.documentElement;
-      var saved = localStorage.getItem('hauba-theme');
-      if (saved === 'light' || saved === 'dark') html.dataset.theme = saved;
-      document.getElementById('themeBtn').addEventListener('click', function() {
-        var next = html.dataset.theme === 'dark' ? 'light' : 'dark';
-        html.dataset.theme = next;
-        localStorage.setItem('hauba-theme', next);
+
+      // After two animation frames the browser has painted with the correct
+      // theme — now re-enable transitions so toggle clicks animate smoothly.
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          html.classList.remove('theme-init');
+        });
       });
+
+      function applyTheme(theme, persist) {
+        html.setAttribute('data-theme', theme);
+        var btn = document.getElementById('themeBtn');
+        if (btn) {
+          btn.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+          btn.setAttribute('aria-checked', theme === 'light' ? 'true' : 'false');
+        }
+        if (persist) localStorage.setItem('hauba-theme', theme);
+      }
+
+      // Sync button ARIA state with whatever the blocking head script set.
+      applyTheme(html.dataset.theme || 'dark', false);
+
+      document.getElementById('themeBtn').addEventListener('click', function() {
+        applyTheme(html.dataset.theme === 'dark' ? 'light' : 'dark', true);
+      });
+
+      // Follow system preference changes only when the user hasn't manually chosen.
+      if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+          if (!localStorage.getItem('hauba-theme')) {
+            applyTheme(e.matches ? 'dark' : 'light', false);
+          }
+        });
+      }
     })();
 
     function detectOS() {
