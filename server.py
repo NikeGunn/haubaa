@@ -135,7 +135,7 @@ def create_server_app():
         title="Hauba AI Engineer",
         description=(
             "AI Software Engineer as a Service. BYOK — bring your own API key. "
-            "Powered by GitHub Copilot SDK."
+            "Powered by OpenAI Agents SDK. Autonomous. Real. Unstoppable."
         ),
         version=__version__,
         docs_url="/docs",
@@ -651,8 +651,8 @@ LANDING_PAGE = """\
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hauba — Your AI Engineering Company</title>
-  <meta name="description" content="Stop hiring. Start shipping. Hauba is an AI engineering team that builds real software, not chatbot responses. One command. Production code. Open-source.">
+  <title>Hauba — The World's First Autonomous AI Engineering Workforce</title>
+  <meta name="description" content="Deploy an autonomous AI engineering team with one command. Builds full-stack apps, edits videos, processes data, ships production code — no humans required. Open-source. BYOK. Powered by OpenAI Agents SDK.">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1084,12 +1084,12 @@ LANDING_PAGE = """\
       <div class="mascot-hover-panel">
         <div class="mhp-inner">
           <div class="mhp-bar"><div class="mhp-dot r"></div><div class="mhp-dot y"></div><div class="mhp-dot g"></div></div>
-          <div class="mhp-file">hauba/engine/copilot_engine.py</div>
+          <div class="mhp-file">hauba/engine/agent_engine.py</div>
           <div class="mhp-line"><span class="c-kw">async def</span> <span class="c-fn">execute</span>(self, task):</div>
           <div class="mhp-line">&nbsp;&nbsp;session = <span class="c-kw">await</span> self.<span class="c-fn">create_session</span>()</div>
           <div class="mhp-line">&nbsp;&nbsp;<span class="c-cm"># BYOK: user's key, not ours</span></div>
           <div class="mhp-line">&nbsp;&nbsp;<span class="c-kw">return await</span> session.<span class="c-fn">send_and_wait</span>(task)<span class="mhp-cursor"></span></div>
-          <div class="mhp-status">&#x2713; Powered by Copilot SDK</div>
+          <div class="mhp-status">&#x2713; OpenAI Agents SDK &bull; Autonomous</div>
         </div>
       </div>
       <svg class="mascot-svg" viewBox="0 0 130 158" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1127,13 +1127,14 @@ LANDING_PAGE = """\
     <div class="version-tag" id="versionTag" style="visibility:hidden"></div>
 
     <p class="hero-tagline">
-      <strong>Stop hiring engineers. Start shipping products.</strong><br>
-      An AI engineering company in your terminal. Not a chatbot.
+      <strong>Stop hiring. Deploy autonomous AI engineers.</strong><br>
+      The engineering workforce that never sleeps. Not a chatbot &mdash; a team.
     </p>
     <p class="hero-sub">
-      One command gives you an AI team that plans architecture, writes production code,
-      runs tests, fixes bugs, and delivers &mdash; while you sleep. Powered by Copilot SDK.
-      Your API key. Your code. Your infrastructure. Zero vendor lock-in.
+      One command deploys an AI agent that plans architecture, writes production code,
+      runs tests, debugs, and ships &mdash; while you build your empire.
+      Powered by <strong>OpenAI Agents SDK</strong>. Your API key. Your data. $0 platform cost.
+      17 skills. Infinite sessions. Zero hallucination guarantee.
     </p>
 
     <div class="terminal reveal">
@@ -1146,7 +1147,7 @@ LANDING_PAGE = """\
         <span class="t-prompt">$</span> <span class="t-cmd">hauba init</span><br>
         <span class="t-output">Initialized hauba workspace at ./hauba.yaml</span><br>
         <span class="t-prompt">$</span> <span class="t-cmd">hauba run <span style="color:var(--gray-1)">"build a SaaS dashboard with auth"</span></span><br>
-        <span class="t-output">Engine &rarr; Copilot SDK connected</span><br>
+        <span class="t-output">Engine &rarr; OpenAI Agents SDK connected</span><br>
         <span class="t-output">Agent &rarr; Planning architecture...</span><br>
         <span class="t-output">Agent &rarr; Implementing auth + Stripe billing</span><br>
         <span class="t-success">&#x2713; All tasks verified. 0 hallucinations.</span><span class="t-cursor"></span>
@@ -1194,13 +1195,13 @@ LANDING_PAGE = """\
 
   <section class="section" id="features">
     <div class="section-label reveal">Capabilities</div>
-    <h2 class="section-title reveal">Why 10,000+ developers chose Hauba.</h2>
-    <p class="section-subtitle reveal">The same AI backbone used by GitHub. Now open-source and in your hands.</p>
+    <h2 class="section-title reveal">Why the world's best builders choose Hauba.</h2>
+    <p class="section-subtitle reveal">Autonomous AI agents powered by OpenAI. Open-source. BYOK. Ship 10x faster.</p>
     <div class="features reveal">
       <div class="feature">
         <div class="feature-icon">&#x2B21;</div>
-        <h3>Enterprise-Grade Engine</h3>
-        <p>Powered by GitHub Copilot SDK &mdash; the same production-tested runtime behind Copilot. Not a wrapper. The real thing.</p>
+        <h3>OpenAI Agents SDK Engine</h3>
+        <p>Built on the OpenAI Agents SDK &mdash; the same autonomous runtime powering the world's most advanced AI agents. Production-grade. Not a wrapper.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x2B22;</div>
@@ -1233,7 +1234,7 @@ LANDING_PAGE = """\
   <section class="section" id="how">
     <div class="section-label reveal">Workflow</div>
     <h2 class="section-title reveal">From idea to production in 3 steps.</h2>
-    <p class="section-subtitle reveal">Your competitors are hiring for 6 months. You ship today.</p>
+    <p class="section-subtitle reveal">Your competitors hire for 6 months. You ship today. The unfair advantage.</p>
     <div class="steps reveal">
       <div class="step">
         <div class="step-num">1</div>
@@ -1256,20 +1257,51 @@ LANDING_PAGE = """\
   <section class="section" id="architecture">
     <div class="section-label reveal">Under the hood</div>
     <h2 class="section-title reveal">Architecture</h2>
-    <p class="section-subtitle reveal">Copilot SDK engine. BYOK. Event-driven. Infinite sessions.</p>
+    <p class="section-subtitle reveal">OpenAI Agents SDK. BYOK. Event-driven. Infinite sessions. Zero hallucination.</p>
     <div class="arch-card reveal">
-      <span class="a-cm"># Hauba AI Engineer Architecture</span><br>
-      <span class="a-k">User</span> <span class="a-t">(brings own API key)</span><br>
-      &nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> <span class="a-k">Hauba CLI / API</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> <span class="a-k">Copilot SDK</span> <span class="a-t">(engine)</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> <span class="a-k">Copilot CLI Server</span> <span class="a-t">(agent runtime)</span><br>
+      <span class="a-cm"># Hauba V3 &mdash; Autonomous AI Engineering Architecture</span><br>
+      <span class="a-k">User</span> <span class="a-t">(brings own API key &mdash; OpenAI, Anthropic, Ollama)</span><br>
+      &nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> <span class="a-k">Hauba CLI / API / Discord / Telegram / Voice</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> <span class="a-k">SkillMatcher</span> <span class="a-t">(TF-IDF &rarr; top-3 skill injection)</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> <span class="a-k">OpenAI Agents SDK</span> <span class="a-t">(autonomous runtime)</span><br>
       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x251C;&#x2500;&#x2500;</span> bash, files, git <span class="a-cm">&mdash; built-in tools</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x251C;&#x2500;&#x2500;</span> web, browser <span class="a-cm">&mdash; optional tools</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x251C;&#x2500;&#x2500;</span> web, browser, screen <span class="a-cm">&mdash; extended tools</span><br>
       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> infinite sessions <span class="a-cm">&mdash; auto-compaction</span><br><br>
-      <span class="a-cm"># BYOK: Claude, GPT-4, Ollama &mdash; user's key, zero cost to owner</span><br>
-      <span class="a-cm"># Skills: .md files &mdash; domain expertise injection</span><br>
-      <span class="a-cm"># Strategies: .yaml playbooks &mdash; structured execution</span>
+      <span class="a-cm"># TaskLedger: SHA-256 hash-chain &mdash; zero hallucination audit</span><br>
+      <span class="a-cm"># BYOK: GPT-4o, Claude, Gemini, Ollama &mdash; user's key, $0 cost</span><br>
+      <span class="a-cm"># Skills: 17 built-in .md domains &mdash; code, video, data, ML, docs</span><br>
+      <span class="a-cm"># Community: create &amp; share skills globally (coming soon)</span>
     </div>
+  </section>
+
+  <!-- ═══ Community Skills Marketplace (Coming Soon) ═══ -->
+  <section class="section" id="community">
+    <div class="section-label reveal">Community</div>
+    <h2 class="section-title reveal">The AI Skills Marketplace</h2>
+    <p class="section-subtitle reveal">Create, share, and install domain expertise. The npm of AI agent intelligence.</p>
+    <div class="features reveal" style="grid-template-columns: repeat(2, 1fr)">
+      <div class="feature" style="padding:2.2rem">
+        <div class="feature-icon">&#x1F4E6;</div>
+        <h3>Create Skills</h3>
+        <p>Write a <code>.md</code> file with your domain expertise. The agent reads it, learns it, applies it to every task. No code required &mdash; just knowledge.</p>
+      </div>
+      <div class="feature" style="padding:2.2rem">
+        <div class="feature-icon">&#x1F30D;</div>
+        <h3>Publish Globally</h3>
+        <p>Upload to the Hauba skill registry. One command to install: <code>hauba skill install your-skill</code>. Share your expertise with millions.</p>
+      </div>
+      <div class="feature" style="padding:2.2rem">
+        <div class="feature-icon">&#x1F4B0;</div>
+        <h3>Earn Revenue</h3>
+        <p>Premium skills. Community rewards. Be the expert whose knowledge powers a thousand AI agents. Your expertise, monetized.</p>
+      </div>
+      <div class="feature" style="padding:2.2rem">
+        <div class="feature-icon">&#x1F91D;</div>
+        <h3>Build Together</h3>
+        <p>Fork skills, improve them, give back. The most powerful AI ecosystem built entirely by humans, for autonomous agents.</p>
+      </div>
+    </div>
+    <p class="reveal" style="text-align:center;margin-top:2rem;font-size:0.82rem;color:var(--accent);font-weight:600;letter-spacing:0.05em">&#x2728; COMING SOON &mdash; Join the waitlist at <a href="https://github.com/NikeGunn/haubaa" style="color:var(--accent);text-decoration:underline">github.com/NikeGunn/haubaa</a></p>
   </section>
 
   <footer class="footer">
@@ -1278,10 +1310,11 @@ LANDING_PAGE = """\
       <a href="https://pypi.org/project/hauba/">PyPI</a>
       <a href="https://github.com/NikeGunn/haubaa#readme">Docs</a>
       <a href="https://github.com/NikeGunn/haubaa/releases">Releases</a>
+      <a href="/docs">API</a>
     </div>
     <p class="footer-credit">
       Built by <strong>Nikhil Bhagat</strong> and community &mdash; MIT License<br>
-      <span style="color:var(--accent)">Powered by GitHub Copilot SDK</span>
+      <span style="color:var(--accent)">Powered by OpenAI Agents SDK &mdash; Autonomous. Real. Unstoppable.</span>
     </p>
   </footer>
 
