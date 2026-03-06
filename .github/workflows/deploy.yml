@@ -97,7 +97,6 @@ jobs:
             --service web \
             --environment production
           echo "Deployment triggered — waiting for health check."
-        continue-on-error: true
 
       # ------------------------------------------------------------------ #
       # 3. Poll /health until Railway serves the new container.             #
