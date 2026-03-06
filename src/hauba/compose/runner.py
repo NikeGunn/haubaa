@@ -59,7 +59,7 @@ class ComposeRunner:
         )
 
         try:
-            from hauba.engine.copilot_engine import CopilotEngine
+            from hauba.engine.agent_engine import AgentEngine
             from hauba.engine.types import EngineConfig, ProviderType
 
             # Load skills
@@ -108,7 +108,7 @@ class ComposeRunner:
                     working_directory=str(agent_workspace),
                 )
 
-                engine = CopilotEngine(engine_config, skill_context=skill_context)
+                engine = AgentEngine(engine_config, skill_context=skill_context)
 
                 # Build agent-specific instruction
                 instruction = (

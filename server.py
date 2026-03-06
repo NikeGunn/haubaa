@@ -29,28 +29,28 @@ import time
 import urllib.request
 from pathlib import Path
 
-# ── Pre-flight: ensure copilot CLI is available ─────────────────────────────
+# ── Pre-flight: ensure agents SDK is available ───────────────────────────────
 
 
 def _ensure_copilot_sdk() -> None:
-    """Verify the Copilot SDK is available (installed via pip)."""
+    """Verify the OpenAI Agents SDK is available (installed via pip)."""
     try:
-        import copilot  # noqa: F401
+        import agents  # noqa: F401
 
-        print("[hauba] Copilot SDK available.")
+        print("[hauba] OpenAI Agents SDK available.")
     except ImportError:
-        print("[hauba] Copilot SDK not found. Installing via pip...")
+        print("[hauba] Agents SDK not found. Installing via pip...")
         try:
             subprocess.run(
-                [sys.executable, "-m", "pip", "install", "github-copilot-sdk"],
+                [sys.executable, "-m", "pip", "install", "openai-agents[litellm]"],
                 check=True,
                 timeout=120,
                 capture_output=True,
                 text=True,
             )
-            print("[hauba] Copilot SDK installed successfully.")
+            print("[hauba] OpenAI Agents SDK installed successfully.")
         except Exception as e:
-            print(f"[hauba] Warning: Could not install Copilot SDK: {e}")
+            print(f"[hauba] Warning: Could not install Agents SDK: {e}")
             print("[hauba] API will serve but task execution may fail.")
 
 
@@ -186,7 +186,7 @@ def create_server_app():
 
     @app.get("/api/v1/health")
     async def health_v1():
-        return {"status": "ok", "service": "hauba-ai-engineer", "engine": "copilot-sdk"}
+        return {"status": "ok", "service": "hauba-ai-engineer", "engine": "openai-agents-sdk-v3"}
 
     # ── Version ───────────────────────────────────────────────────────────
 

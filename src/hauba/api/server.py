@@ -157,8 +157,8 @@ SUPPORTED_MODELS: list[dict[str, str]] = [
 
 
 async def _run_task(task_id: str, request: TaskRequest) -> None:
-    """Execute a task in the background using the Copilot Engine."""
-    from hauba.engine.copilot_engine import CopilotEngine
+    """Execute a task in the background using AgentEngine (V3)."""
+    from hauba.engine.agent_engine import AgentEngine
 
     task = _tasks[task_id]
     task["status"] = "running"
@@ -197,7 +197,7 @@ async def _run_task(task_id: str, request: TaskRequest) -> None:
         events.append(event_dict)
         task["events"] = events
 
-    engine = CopilotEngine(config)
+    engine = AgentEngine(config)
 
     try:
         await engine.start()
@@ -206,7 +206,6 @@ async def _run_task(task_id: str, request: TaskRequest) -> None:
         result = await engine.execute(
             instruction=request.instruction,
             timeout=request.timeout,
-            system_message=request.system_message,
         )
 
         unsub()
@@ -214,7 +213,6 @@ async def _run_task(task_id: str, request: TaskRequest) -> None:
         task["status"] = "completed" if result.success else "failed"
         task["output"] = result.output
         task["error"] = result.error
-        task["session_id"] = result.session_id
         task["completed_at"] = time.time()
 
     except Exception as e:

@@ -393,16 +393,16 @@ def init() -> None:
 
     config.save()
 
-    # ── Copilot SDK check ─────────────────────────────────────────────────
+    # ── Agents SDK check ──────────────────────────────────────────────────
     console.print()
-    console.print("  [dim]Checking Copilot SDK...[/dim]")
+    console.print("  [dim]Checking AI Engine...[/dim]")
     try:
-        import copilot  # noqa: F401
+        import agents  # noqa: F401
 
-        console.print("  [green]+[/green] Copilot SDK is installed")
+        console.print("  [green]+[/green] OpenAI Agents SDK is installed")
     except ImportError:
         console.print(
-            "  [yellow]![/yellow] Copilot SDK not found. Install: pip install github-copilot-sdk"
+            "  [yellow]![/yellow] Agents SDK not found. Install: pip install 'openai-agents[litellm]'"
         )
     except Exception:
         console.print("  [green]+[/green] Engine check complete")
@@ -828,11 +828,10 @@ async def _run_task(
     continue_session: bool = False,
     interactive: bool = True,
 ) -> None:
-    """Execute a task using the CopilotEngine with full interactive UI."""
+    """Execute a task using AgentEngine (OpenAI Agents SDK, V3)."""
     from hauba.core.config import ConfigManager
-    from hauba.engine.copilot_engine import CopilotEngine
+    from hauba.engine.agent_engine import AgentEngine
     from hauba.engine.types import EngineConfig, ProviderType
-    from hauba.ui.interactive import InteractiveUI
 
     config = ConfigManager()
 
@@ -863,234 +862,93 @@ async def _run_task(
 
     skill_context = _build_skill_context(task)
 
-    engine = CopilotEngine(engine_config, skill_context=skill_context)
+    engine = AgentEngine(engine_config, skill_context=skill_context)
 
     if not engine.is_available:
         console.print(
             Panel(
-                "[bold red]Copilot SDK not installed[/bold red]\n\n"
-                "Hauba requires the Copilot SDK to work.\n\n"
-                "  Install: [bold]pip install github-copilot-sdk[/bold]",
+                "[bold red]OpenAI Agents SDK not installed[/bold red]\n\n"
+                "Hauba V3 requires the OpenAI Agents SDK.\n\n"
+                "  Install: [bold]pip install 'openai-agents[litellm]'[/bold]",
                 title="Missing Dependency",
                 border_style="red",
             )
         )
         raise typer.Exit(1)
 
-    # Wire up interactive handlers
-    if interactive:
-        engine.set_user_input_handler(_cli_user_input_handler)
-        engine.set_delivery_handler(_cli_delivery_handler)
-
-    # Create the interactive UI
-    ui = InteractiveUI(console)
-
-    # Extract skill names for header
-    skill_names: list[str] = []
-    if skill_context:
-        skill_lines = [ln for ln in skill_context.split("\n") if ln.startswith("### ")]
-        skill_names = [ln.replace("### ", "").split(" (")[0] for ln in skill_lines[:3]]
-
-    ui.show_header(
-        task=task,
-        provider=config.settings.llm.provider,
-        model=config.settings.llm.model,
-        workspace=str(ws_path),
-        skills=skill_names,
-        interactive=interactive,
+    console.print(
+        Panel(
+            f"[bold cyan]Hauba AI Workstation[/bold cyan]\n\n"
+            f"  Task:     {task[:80]}\n"
+            f"  Provider: {config.settings.llm.provider}\n"
+            f"  Model:    {config.settings.llm.model}\n"
+            f"  Output:   {ws_path}\n"
+            f"  Engine:   OpenAI Agents SDK (V3)\n"
+            + (
+                f"  Skills:   {', '.join(s for s in skill_context.split('### ')[1:3] if s)[:80]}\n"
+                if skill_context
+                else ""
+            ),
+            border_style="cyan",
+            padding=(1, 2),
+        )
     )
 
-    ui.show_thinking()
-
-    # Wire up engine events to the interactive UI
-    # Only process known event types — silently ignore the rest.
-    handled_events = {
-        "assistant.message_delta",
-        "assistant.reasoning_delta",
-        "tool.execution_start",
-        "tool.execution_complete",
-        "session.plan_changed",
-        "session.workspace_file_changed",
-        "engine.human_escalation",
-        "subagent.started",
-        "subagent.completed",
-    }
-
-    def _get_data_attr(data: object, key: str, default: str = "") -> str:
-        """Safely get a string attribute from a dict or dataclass."""
-        if isinstance(data, dict):
-            return str(data.get(key, default))
-        return str(getattr(data, key, default) or default)
-
-    def on_event(event: object) -> None:
-        etype = getattr(event, "type", "")
-        if etype not in handled_events:
-            return  # Silently ignore unknown events
-
-        data = getattr(event, "data", None)
-
-        if etype == "assistant.message_delta":
-            delta = _get_data_attr(data, "delta_content")
-            if delta:
-                ui.show_streaming_delta(delta)
-
-        elif etype == "assistant.reasoning_delta":
-            delta = _get_data_attr(data, "delta_content")
-            if delta:
-                console.print(f"[dim italic]{delta}[/dim italic]", end="")
-
-        elif etype == "tool.execution_start":
-            tool_name = _get_data_attr(data, "tool_name") or _get_data_attr(data, "name")
-            if not tool_name:
-                return
-
-            # Extract a readable detail from arguments
-            tool_detail = ""
-            args = (
-                data.get("arguments", None)
-                if isinstance(data, dict)
-                else getattr(data, "arguments", None)
-            )
-            if isinstance(args, dict):
-                tool_detail = str(
-                    args.get("command", "")
-                    or args.get("file_path", "")
-                    or args.get("path", "")
-                    or args.get("query", "")
-                )[:120]
-            elif isinstance(args, str):
-                tool_detail = args[:120]
-
-            ui.show_tool_start(tool_name, tool_detail)
-
-        elif etype == "tool.execution_complete":
-            output = ""
-            success = True
-            if isinstance(data, dict):
-                result = data.get("result", {})
-                if isinstance(result, dict):
-                    output = str(result.get("output", ""))[:200]
-                    success = not result.get("is_error", False)
-            elif data is not None:
-                result = getattr(data, "result", None)
-                if result:
-                    output = str(getattr(result, "output", ""))[:200]
-                    success = not getattr(result, "is_error", False)
-            ui.show_tool_result(output, success)
-
-        elif etype == "session.plan_changed":
-            ui.show_plan_updated()
-
-        elif etype == "session.workspace_file_changed":
-            path = ""
-            action = "edit"
-            if isinstance(data, dict):
-                path = data.get("path", "")
-                action = data.get("operation", "edit")
-            elif data is not None:
-                path = getattr(data, "path", "")
-                op = getattr(data, "operation", None)
-                action = str(op.value if hasattr(op, "value") else op) if op else "edit"
-            if path:
-                ui.show_file_activity(path, action)
-
-        elif etype == "engine.human_escalation":
-            # The actual prompt is handled by _cli_user_input_handler
-            pass
-
-        elif etype == "subagent.started":
-            agent_name = ""
-            if isinstance(data, dict):
-                agent_name = data.get("agent_name", data.get("agent_display_name", ""))
-            elif data is not None:
-                agent_name = getattr(data, "agent_name", "") or getattr(
-                    data, "agent_display_name", ""
-                )
-            if agent_name:
-                console.print(f"\n  [bold magenta]>> Subagent: {agent_name}[/bold magenta]")
-
-        elif etype == "subagent.completed":
-            console.print("  [bold magenta]<< Subagent done[/bold magenta]")
-
-    engine.on_event(on_event)
-
-    # Check for --continue session resumption
-    session_id = None
-    if continue_session:
-        session_id = CopilotEngine.load_last_session()
-        if session_id:
-            console.print(f"  [dim]Resuming session: {session_id[:12]}...[/dim]")
-        else:
-            console.print("  [dim]No previous session found, starting fresh.[/dim]")
+    console.print("  [dim]Starting agent team (Director → Coder/Browser/Reviewer)...[/dim]")
 
     try:
-        result = await engine.execute(task, timeout=600.0, session_id=session_id)
-        console.print()
-
-        if result.success:
-            ui.show_completion(result.output, ui.state.tool_count)
+        if interactive:
+            # Use streaming for real-time output
+            async for event in engine.execute_streamed(task, timeout=600.0):
+                if event.type == "task_started":
+                    console.print("  [green]Agent team started[/green]")
+                elif event.type == "task_completed":
+                    output = event.data.get("output", "")
+                    console.print()
+                    if output:
+                        console.print(
+                            Panel(
+                                output[:3000] if len(output) > 3000 else output,
+                                title="[bold green]Task Complete[/bold green]",
+                                border_style="green",
+                                padding=(1, 2),
+                            )
+                        )
+                    else:
+                        console.print("  [green]Task completed (no output)[/green]")
+                elif event.type == "timeout":
+                    console.print("  [red]Task timed out[/red]")
+                elif event.type == "error":
+                    console.print(f"  [red]Error: {event.data.get('error', 'Unknown')}[/red]")
+                elif event.type not in ("raw_response_event",):
+                    # Show agent activity
+                    detail = event.data.get("event", "")[:200] if event.data else ""
+                    if detail and event.type:
+                        console.print(f"  [dim]{event.type}: {detail}[/dim]")
         else:
-            ui.show_failure(result.error or "Unknown error")
-
-        ui.show_workspace(str(ws_path))
-
-        # Multi-turn conversation loop (interactive mode only)
-        if interactive and result.success and engine.session:
-            ui.show_session_active()
-            await _conversation_loop(engine, ui)
-
-    finally:
-        await engine.stop()
-
-
-async def _conversation_loop(
-    engine: object,
-    ui: object,
-) -> None:
-    """Multi-turn conversation loop after task completion.
-
-    The user can send follow-up messages to the same session:
-    - "add tests for the API"
-    - "change the database to PostgreSQL"
-    - "deploy this to Railway"
-    - "exit" or Ctrl+C to end
-    """
-    from hauba.engine.copilot_engine import CopilotEngine
-
-    if not isinstance(engine, CopilotEngine):
-        return
-
-    while True:
-        try:
-            console.print()
-            message = Prompt.ask("[bold cyan]You[/bold cyan]")
-
-            if not message.strip():
-                continue
-
-            lower = message.strip().lower()
-            if lower in ("exit", "quit", "bye", "done", "q"):
-                console.print("  [dim]Session ended.[/dim]")
-                break
-
-            result = await engine.send_message(message, timeout=600.0)
-
+            # Non-interactive: run to completion
+            result = await engine.execute(task, timeout=600.0)
             console.print()
             if result.success:
                 console.print(
                     Panel(
-                        result.output[:2000] if result.output else "[dim]No output[/dim]",
+                        result.output[:3000] if result.output else "[dim]No output[/dim]",
+                        title="[bold green]Task Complete[/bold green]",
                         border_style="green",
+                        padding=(1, 2),
                     )
                 )
             else:
                 console.print(f"  [red]{result.error}[/red]")
 
-        except KeyboardInterrupt:
-            console.print("\n  [dim]Session ended.[/dim]")
-            break
-        except EOFError:
-            break
+        console.print(f"\n  [dim]Output directory: {ws_path}[/dim]")
+
+        # Delivery prompt
+        if interactive:
+            await _cli_delivery_handler("Task completed", "")
+
+    finally:
+        await engine.stop()
 
 
 setup_app = typer.Typer(
@@ -1295,10 +1153,8 @@ def status() -> None:
     from rich.table import Table
 
     from hauba.core.config import ConfigManager
-    from hauba.engine.copilot_engine import CopilotEngine
 
     config = ConfigManager()
-    plan = CopilotEngine.load_last_plan()
 
     # Status table
     table = Table(border_style="blue", show_header=False, padding=(0, 2))
@@ -1308,13 +1164,15 @@ def status() -> None:
     table.add_row("Owner", config.settings.owner_name)
     table.add_row("Provider", config.settings.llm.provider)
     table.add_row("Model", config.settings.llm.model)
+    table.add_row("Engine", "OpenAI Agents SDK (V3)")
 
-    if plan and plan.task:
-        table.add_row("", "")
-        table.add_row("Last Task", plan.task[:80])
-        table.add_row("Approved", "[green]Yes[/green]" if plan.approved else "[yellow]No[/yellow]")
-        if plan.files_created:
-            table.add_row("Files Created", str(len(plan.files_created)))
+    # Check for agents SDK
+    try:
+        import agents  # noqa: F401
+
+        table.add_row("Agents SDK", "[green]installed[/green]")
+    except ImportError:
+        table.add_row("Agents SDK", "[red]not installed[/red]")
 
     console.print(Panel(table, title="[bold blue]Hauba Status[/bold blue]", border_style="blue"))
 
@@ -1415,7 +1273,7 @@ async def _voice_loop() -> None:
             console.print(f"[bold]You:[/bold] {text}")
 
             from hauba.core.config import ConfigManager
-            from hauba.engine.copilot_engine import CopilotEngine
+            from hauba.engine.agent_engine import AgentEngine
             from hauba.engine.types import EngineConfig, ProviderType
 
             config = ConfigManager()
@@ -1431,8 +1289,7 @@ async def _voice_loop() -> None:
                 api_key=config.settings.llm.api_key,
                 model=config.settings.llm.model,
             )
-            engine = CopilotEngine(engine_config)
-            engine.set_user_input_handler(_cli_user_input_handler)
+            engine = AgentEngine(engine_config)
             result = await engine.execute(text)
             await engine.stop()
 

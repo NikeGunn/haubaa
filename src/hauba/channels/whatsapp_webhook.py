@@ -666,8 +666,8 @@ class WhatsAppBot:
         return f"Error: {error}"
 
     async def _execute_with_engine(self, session: UserSession, body: str) -> Any:
-        """Run the message through CopilotEngine."""
-        from hauba.engine.copilot_engine import CopilotEngine
+        """Run the message through AgentEngine (V3)."""
+        from hauba.engine.agent_engine import AgentEngine
         from hauba.engine.types import EngineConfig, ProviderType
 
         provider_map = {
@@ -690,14 +690,9 @@ class WhatsAppBot:
                 model=self._model,
                 base_url=base_url,
             )
-            session.engine = CopilotEngine(config)
-            return await session.engine.execute(body, timeout=timeout)
-        else:
-            # Follow-up message to existing session
-            if session.engine.session:
-                return await session.engine.send_message(body, timeout=timeout)
-            else:
-                return await session.engine.execute(body, timeout=timeout)
+            session.engine = AgentEngine(config)
+
+        return await session.engine.execute(body, timeout=timeout)
 
     @staticmethod
     def _parse_command(body: str) -> tuple[str, str]:

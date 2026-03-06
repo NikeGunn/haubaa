@@ -242,9 +242,9 @@ class HaubaDaemon:
             return False
 
     async def _execute_task(self, task_data: dict[str, Any]) -> None:
-        """Execute a single task locally via CopilotEngine."""
+        """Execute a single task locally via AgentEngine (V3)."""
         from hauba.core.config import ConfigManager
-        from hauba.engine.copilot_engine import CopilotEngine
+        from hauba.engine.agent_engine import AgentEngine
         from hauba.engine.types import EngineConfig, ProviderType
 
         task_id = task_data["task_id"]
@@ -296,7 +296,7 @@ class HaubaDaemon:
         except Exception:
             skill_context = ""
 
-        engine = CopilotEngine(engine_config, skill_context=skill_context)
+        engine = AgentEngine(engine_config, skill_context=skill_context)
 
         # Track cost via engine events (tool calls = LLM usage)
         self._task_costs[task_id] = 0.0
