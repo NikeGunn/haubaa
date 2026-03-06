@@ -94,6 +94,7 @@ jobs:
           railway up \
             --no-gitignore \
             --detach \
+            --service web \
             --environment production
           echo "Deployment triggered — waiting for health check."
         continue-on-error: true
