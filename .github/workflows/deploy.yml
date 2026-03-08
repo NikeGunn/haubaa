@@ -19,20 +19,20 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      PRODUCTION_URL:         https://hauba.tech
-      HEALTH_PATH:            /health
-      # Railway builds finish in 60-180 s; 300 s = 2× safety margin.
-      POLL_TIMEOUT:           300
-      POLL_INTERVAL:          10
-      RAILWAY_PROJECT_ID:     380fdf3d-367f-4ec5-83c7-2d49d077ee3e
-      RAILWAY_ENVIRONMENT_ID: aecb7e59-0232-4996-952e-4f3ded062f0d
+      PRODUCTION_URL:     https://hauba.tech
+      HEALTH_PATH:        /health
+      RAILWAY_PROJECT_URL: https://railway.com/project/380fdf3d-367f-4ec5-83c7-2d49d077ee3e
+      # Railway auto-deploys via its GitHub integration.
+      # This workflow tracks the deployment status and verifies health.
+      # Allow up to 5 minutes for Railway build + deploy + rolling restart.
+      POLL_TIMEOUT:       300
+      POLL_INTERVAL:      15
 
     steps:
       - uses: actions/checkout@v4
 
       # ------------------------------------------------------------------ #
-      # 1. Create a GitHub deployment for this SHA immediately so the       #
-      #    commit shows a status bubble from the start.                     #
+      # 1. Create a GitHub Deployment so the commit shows a status bubble.  #
       # ------------------------------------------------------------------ #
       - name: Create GitHub deployment
         id: create-deploy
@@ -62,45 +62,15 @@ jobs:
               repo:            context.repo.repo,
               deployment_id:   ${{ steps.create-deploy.outputs.deployment_id }},
               state:           'in_progress',
-              description:     'Railway building and deploying…',
-              log_url:         'https://railway.com/project/380fdf3d-367f-4ec5-83c7-2d49d077ee3e',
+              description:     'Railway is building and deploying…',
+              log_url:         '${{ env.RAILWAY_PROJECT_URL }}',
               environment_url: '${{ env.PRODUCTION_URL }}',
             });
 
       # ------------------------------------------------------------------ #
-      # 2. ACTIVELY trigger Railway to deploy the current commit via CLI.   #
-      #    The old workflow only polled health — it never told Railway to   #
-      #    deploy, which is why new commits were never picked up.           #
-      #                                                                     #
-      #    Prerequisites (one-time setup):                                  #
-      #      1. Go to https://railway.com/account/tokens → create a token  #
-      #      2. GitHub repo → Settings → Secrets and variables → Actions   #
-      #         → New secret: RAILWAY_TOKEN = <your token>                  #
-      # ------------------------------------------------------------------ #
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli@latest
-
-      - name: Trigger Railway deployment
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          if [ -z "$RAILWAY_TOKEN" ]; then
-            echo "::warning::RAILWAY_TOKEN secret not set — Railway will NOT auto-deploy."
-            echo "  → Go to https://railway.com/account/tokens and create a token."
-            echo "  → Add it as GitHub secret RAILWAY_TOKEN in repo Settings → Secrets."
-            exit 0
-          fi
-          echo "Triggering Railway deployment for $GITHUB_SHA …"
-          railway up \
-            --no-gitignore \
-            --detach \
-            --service web \
-            --environment production
-          echo "Deployment triggered — waiting for health check."
-
-      # ------------------------------------------------------------------ #
-      # 3. Poll /health until Railway serves the new container.             #
-      #    Sleep 40 s first to let the build + rolling restart begin.      #
+      # 2. Wait for Railway to build & deploy, then verify /health.         #
+      #    Railway's GitHub integration auto-deploys on push — no CLI       #
+      #    needed. We just wait and verify.                                 #
       # ------------------------------------------------------------------ #
       - name: Wait for Railway healthcheck
         id: healthcheck
@@ -110,8 +80,10 @@ jobs:
 
           echo "Target : $URL"
           echo "Timeout: ${POLL_TIMEOUT}s  Interval: ${POLL_INTERVAL}s"
-          echo "Giving Railway 40 s to start build / rolling restart…"
-          sleep 40
+          echo ""
+          echo "Railway auto-deploys via GitHub integration."
+          echo "Waiting 60s for build to start…"
+          sleep 60
 
           HEALTHY=false
           while [ "$(date +%s)" -lt "$DEADLINE" ]; do
@@ -126,15 +98,15 @@ jobs:
 
           if [ "$HEALTHY" = "true" ]; then
             echo "result=success" >> "$GITHUB_OUTPUT"
-            echo "✅ Railway is healthy."
+            echo "Railway is healthy."
           else
             echo "result=failure" >> "$GITHUB_OUTPUT"
-            echo "❌ Railway did not become healthy within ${POLL_TIMEOUT}s."
+            echo "Railway did not become healthy within ${POLL_TIMEOUT}s."
             exit 1
           fi
 
       # ------------------------------------------------------------------ #
-      # 4a. Success.                                                        #
+      # 3a. Success.                                                        #
       # ------------------------------------------------------------------ #
       - name: Set status → success
         if: steps.healthcheck.outputs.result == 'success'
@@ -147,12 +119,12 @@ jobs:
               deployment_id:   ${{ steps.create-deploy.outputs.deployment_id }},
               state:           'success',
               description:     'Deployed and healthy on Railway.',
-              log_url:         'https://railway.com/project/380fdf3d-367f-4ec5-83c7-2d49d077ee3e',
+              log_url:         '${{ env.RAILWAY_PROJECT_URL }}',
               environment_url: '${{ env.PRODUCTION_URL }}',
             });
 
       # ------------------------------------------------------------------ #
-      # 4b. Failure.                                                        #
+      # 3b. Failure.                                                        #
       # ------------------------------------------------------------------ #
       - name: Set status → failure
         if: failure()
@@ -167,6 +139,6 @@ jobs:
               deployment_id:   parseInt(id),
               state:           'failure',
               description:     'Railway healthcheck timed out or deployment failed.',
-              log_url:         'https://railway.com/project/380fdf3d-367f-4ec5-83c7-2d49d077ee3e',
+              log_url:         '${{ env.RAILWAY_PROJECT_URL }}',
               environment_url: '${{ env.PRODUCTION_URL }}',
             });
