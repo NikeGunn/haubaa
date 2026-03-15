@@ -8,6 +8,7 @@ clean request/response with tool calling support.
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -258,7 +259,7 @@ class LLMClient:
         messages: list[LLMMessage],
         tools: list[dict[str, Any]] | None = None,
         system: str = "",
-    ) -> Any:
+    ) -> AsyncIterator[StreamChunk]:
         """Stream an LLM completion with tool support.
 
         Yields StreamChunk objects as tokens arrive.
@@ -292,7 +293,9 @@ class LLMClient:
             kwargs["tool_choice"] = "auto"
 
         try:
-            response = await litellm.acompletion(**kwargs)
+            # litellm.acompletion with stream=True returns CustomStreamWrapper
+            # (async iterable), but pyright sees the static type as ModelResponse.
+            response: Any = await litellm.acompletion(**kwargs)
 
             full_text = ""
             tool_calls_acc: dict[int, dict[str, Any]] = {}
