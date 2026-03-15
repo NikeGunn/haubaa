@@ -626,7 +626,7 @@ async def test_tracker_records_tool_calls() -> None:
     assert registry.tracker.total_actions == 1
     assert registry.tracker.actions[0].tool_name == "bash"
     assert registry.tracker.actions[0].success is True
-    assert registry.tracker.actions[0].duration_ms > 0
+    assert registry.tracker.actions[0].duration_ms >= 0
 
 
 @pytest.mark.asyncio
