@@ -420,24 +420,24 @@ class WebUI:
             <div class="card-body">
                 <div class="agent-list">
                     <div class="agent-item">
-                        <div class="agent-avatar icon-purple" style="background:rgba(123,47,255,0.15);color:var(--purple);">D</div>
+                        <div class="agent-avatar icon-purple" style="background:rgba(123,47,255,0.15);color:var(--purple);">A</div>
                         <div class="agent-info">
-                            <div class="agent-name">Director</div>
+                            <div class="agent-name">AgentEngine</div>
                             <div class="agent-status">Waiting for task...</div>
                         </div>
                     </div>
                     <div class="agent-item">
-                        <div class="agent-avatar" style="background:rgba(0,212,255,0.15);color:var(--cyan);">S</div>
+                        <div class="agent-avatar" style="background:rgba(0,212,255,0.15);color:var(--cyan);">T</div>
                         <div class="agent-info">
-                            <div class="agent-name">SubAgent</div>
-                            <div class="agent-status">Idle</div>
+                            <div class="agent-name">ToolRegistry</div>
+                            <div class="agent-status">10 tools ready</div>
                         </div>
                     </div>
                     <div class="agent-item">
-                        <div class="agent-avatar" style="background:rgba(0,255,136,0.15);color:var(--green);">W</div>
+                        <div class="agent-avatar" style="background:rgba(0,255,136,0.15);color:var(--green);">C</div>
                         <div class="agent-info">
-                            <div class="agent-name">Worker</div>
-                            <div class="agent-status">Idle</div>
+                            <div class="agent-name">ContextManager</div>
+                            <div class="agent-status">Auto-compaction ready</div>
                         </div>
                     </div>
                 </div>

@@ -157,7 +157,7 @@ SUPPORTED_MODELS: list[dict[str, str]] = [
 
 
 async def _run_task(task_id: str, request: TaskRequest) -> None:
-    """Execute a task in the background using AgentEngine (V3)."""
+    """Execute a task in the background using AgentEngine (V4)."""
     from hauba.engine.agent_engine import AgentEngine
 
     task = _tasks[task_id]

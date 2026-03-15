@@ -15,7 +15,7 @@ Serves:
   GET /redoc         → ReDoc API docs
 
 Architecture:
-  Core Engine: OpenAI Agents SDK (production-tested autonomous runtime)
+  Core Engine: Custom Agent Loop + LiteLLM (direct LLM API calls, full tool control)
   BYOK: Users bring their own API key. Hauba owner pays ZERO.
 """
 
@@ -29,21 +29,20 @@ import time
 import urllib.request
 from pathlib import Path
 
-# ── Pre-flight: ensure agents SDK is available ───────────────────────────────
+# ── Pre-flight: ensure LiteLLM is available ──────────────────────────────────
 
 
-def _ensure_copilot_sdk() -> None:
-    """Check if the OpenAI Agents SDK is available (non-blocking)."""
+def _ensure_litellm() -> None:
+    """Check if LiteLLM is available for LLM calls (non-blocking)."""
     try:
-        import agents  # noqa: F401
+        import litellm  # noqa: F401
 
-        print("[hauba] OpenAI Agents SDK available.")
+        print("[hauba] LiteLLM available — Custom Agent Loop (V4) ready.")
     except ImportError:
         # Do NOT pip-install at startup — that blocks the health check and causes
         # Railway (30 s healthcheckTimeout) to roll back to the previous container.
-        # The SDK is pre-installed via nixpacks.toml; runtime import should succeed.
-        print("[hauba] Warning: OpenAI Agents SDK not found. Task execution may fail.")
-        print("[hauba] Install with: pip install openai-agents[litellm]")
+        print("[hauba] Warning: LiteLLM not found. Task execution may fail.")
+        print("[hauba] Install with: pip install litellm")
 
 
 # ── GitHub release cache ─────────────────────────────────────────────────────
@@ -127,7 +126,7 @@ def create_server_app():
         title="Hauba AI Engineer",
         description=(
             "AI Software Engineer as a Service. BYOK — bring your own API key. "
-            "Powered by OpenAI Agents SDK. Autonomous. Real. Unstoppable."
+            "Powered by Custom Agent Loop + LiteLLM. Autonomous. Real. Unstoppable."
         ),
         version=__version__,
         docs_url="/docs",
@@ -178,7 +177,7 @@ def create_server_app():
 
     @app.get("/api/v1/health")
     async def health_v1():
-        return {"status": "ok", "service": "hauba-ai-engineer", "engine": "openai-agents-sdk-v3"}
+        return {"status": "ok", "service": "hauba-ai-engineer", "engine": "custom-agent-loop-v4"}
 
     # ── Version ───────────────────────────────────────────────────────────
 
@@ -646,7 +645,7 @@ LANDING_PAGE = """\
   <script>!function(){var s=localStorage.getItem('hauba-theme'),t=s==='light'||s==='dark'?s:window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';document.documentElement.setAttribute('data-theme',t);document.documentElement.classList.add('theme-init')}()</script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hauba — The World's First Autonomous AI Engineering Workforce</title>
-  <meta name="description" content="Deploy an autonomous AI engineering team with one command. Builds full-stack apps, edits videos, processes data, ships production code — no humans required. Open-source. BYOK. Powered by OpenAI Agents SDK.">
+  <meta name="description" content="Deploy an autonomous AI engineering team with one command. Builds full-stack apps, edits videos, processes data, ships production code — no humans required. Open-source. BYOK. Custom agent loop with LiteLLM.">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1085,7 +1084,7 @@ LANDING_PAGE = """\
           <div class="mhp-line">&nbsp;&nbsp;session = <span class="c-kw">await</span> self.<span class="c-fn">create_session</span>()</div>
           <div class="mhp-line">&nbsp;&nbsp;<span class="c-cm"># BYOK: user's key, not ours</span></div>
           <div class="mhp-line">&nbsp;&nbsp;<span class="c-kw">return await</span> session.<span class="c-fn">send_and_wait</span>(task)<span class="mhp-cursor"></span></div>
-          <div class="mhp-status">&#x2713; OpenAI Agents SDK &bull; Autonomous</div>
+          <div class="mhp-status">&#x2713; Custom Agent Loop &bull; Autonomous</div>
         </div>
       </div>
       <svg class="mascot-svg" viewBox="0 0 130 158" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1129,7 +1128,7 @@ LANDING_PAGE = """\
     <p class="hero-sub">
       One command deploys an AI agent that plans architecture, writes production code,
       runs tests, debugs, and ships &mdash; while you build your empire.
-      Powered by <strong>OpenAI Agents SDK</strong>. Your API key. Your data. $0 platform cost.
+      Powered by <strong>Custom Agent Loop + LiteLLM</strong>. Your API key. Your data. $0 platform cost.
       17 skills. Infinite sessions. Zero hallucination guarantee.
     </p>
 
@@ -1143,7 +1142,7 @@ LANDING_PAGE = """\
         <span class="t-prompt">$</span> <span class="t-cmd">hauba init</span><br>
         <span class="t-output">Initialized hauba workspace at ./hauba.yaml</span><br>
         <span class="t-prompt">$</span> <span class="t-cmd">hauba run <span style="color:var(--gray-1)">"build a SaaS dashboard with auth"</span></span><br>
-        <span class="t-output">Engine &rarr; OpenAI Agents SDK connected</span><br>
+        <span class="t-output">Engine &rarr; Custom Agent Loop (V4) connected</span><br>
         <span class="t-output">Agent &rarr; Planning architecture...</span><br>
         <span class="t-output">Agent &rarr; Implementing auth + Stripe billing</span><br>
         <span class="t-success">&#x2713; All tasks verified. 0 hallucinations.</span><span class="t-cursor"></span>
@@ -1192,12 +1191,12 @@ LANDING_PAGE = """\
   <section class="section" id="features">
     <div class="section-label reveal">Capabilities</div>
     <h2 class="section-title reveal">Why the world's best builders choose Hauba.</h2>
-    <p class="section-subtitle reveal">Autonomous AI agents powered by OpenAI. Open-source. BYOK. Ship 10x faster.</p>
+    <p class="section-subtitle reveal">Autonomous AI agents with a custom agent loop. Open-source. BYOK. Ship 10x faster.</p>
     <div class="features reveal">
       <div class="feature">
         <div class="feature-icon">&#x2B21;</div>
-        <h3>OpenAI Agents SDK Engine</h3>
-        <p>Built on the OpenAI Agents SDK &mdash; the same autonomous runtime powering the world's most advanced AI agents. Production-grade. Not a wrapper.</p>
+        <h3>Custom Agent Loop Engine</h3>
+        <p>Built on a custom turn-based agent loop with direct LLM API calls via LiteLLM &mdash; full tool control, auto-compaction, streaming. Production-grade. Not a wrapper.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x2B22;</div>
@@ -1253,16 +1252,16 @@ LANDING_PAGE = """\
   <section class="section" id="architecture">
     <div class="section-label reveal">Under the hood</div>
     <h2 class="section-title reveal">Architecture</h2>
-    <p class="section-subtitle reveal">OpenAI Agents SDK. BYOK. Event-driven. Infinite sessions. Zero hallucination.</p>
+    <p class="section-subtitle reveal">Custom Agent Loop + LiteLLM. BYOK. Event-driven. Infinite sessions. Zero hallucination.</p>
     <div class="arch-card reveal">
-      <span class="a-cm"># Hauba V3 &mdash; Autonomous AI Engineering Architecture</span><br>
-      <span class="a-k">User</span> <span class="a-t">(brings own API key &mdash; OpenAI, Anthropic, Ollama)</span><br>
+      <span class="a-cm"># Hauba V4 &mdash; Autonomous AI Engineering Architecture</span><br>
+      <span class="a-k">User</span> <span class="a-t">(brings own API key &mdash; OpenAI, Anthropic, Ollama, DeepSeek, Google)</span><br>
       &nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> <span class="a-k">Hauba CLI / API / Discord / Telegram / Voice</span><br>
       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> <span class="a-k">SkillMatcher</span> <span class="a-t">(TF-IDF &rarr; top-3 skill injection)</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> <span class="a-k">OpenAI Agents SDK</span> <span class="a-t">(autonomous runtime)</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x251C;&#x2500;&#x2500;</span> bash, files, git <span class="a-cm">&mdash; built-in tools</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x251C;&#x2500;&#x2500;</span> web, browser, screen <span class="a-cm">&mdash; extended tools</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> infinite sessions <span class="a-cm">&mdash; auto-compaction</span><br><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> <span class="a-k">AgentEngine</span> <span class="a-t">(custom turn-based loop via LiteLLM)</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x251C;&#x2500;&#x2500;</span> bash, read_file, write_file, edit_file <span class="a-cm">&mdash; core tools</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x251C;&#x2500;&#x2500;</span> grep, glob, web_search, web_fetch <span class="a-cm">&mdash; search tools</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="a-v">&#x2514;&#x2500;&#x2500;</span> auto-compaction <span class="a-cm">&mdash; infinite sessions</span><br><br>
       <span class="a-cm"># TaskLedger: SHA-256 hash-chain &mdash; zero hallucination audit</span><br>
       <span class="a-cm"># BYOK: GPT-4o, Claude, Gemini, Ollama &mdash; user's key, $0 cost</span><br>
       <span class="a-cm"># Skills: 17 built-in .md domains &mdash; code, video, data, ML, docs</span><br>
@@ -1310,7 +1309,7 @@ LANDING_PAGE = """\
     </div>
     <p class="footer-credit">
       Built by <strong>Nikhil Bhagat</strong> and community &mdash; MIT License<br>
-      <span style="color:var(--accent)">Powered by OpenAI Agents SDK &mdash; Autonomous. Real. Unstoppable.</span>
+      <span style="color:var(--accent)">Powered by Custom Agent Loop + LiteLLM &mdash; Autonomous. Real. Unstoppable.</span>
     </p>
   </footer>
 
@@ -1424,7 +1423,7 @@ LANDING_PAGE = """\
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 8080))
 
-    _ensure_copilot_sdk()
+    _ensure_litellm()
 
     app = create_server_app()
 
