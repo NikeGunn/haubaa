@@ -89,12 +89,14 @@ def test_registry_custom_tool() -> None:
     async def my_tool(x: str) -> ToolResult:
         return ToolResult.ok(f"got {x}")
 
-    registry.register(ToolDefinition(
-        name="custom",
-        description="Custom tool",
-        parameters={"type": "object", "properties": {"x": {"type": "string"}}},
-        execute_fn=my_tool,
-    ))
+    registry.register(
+        ToolDefinition(
+            name="custom",
+            description="Custom tool",
+            parameters={"type": "object", "properties": {"x": {"type": "string"}}},
+            execute_fn=my_tool,
+        )
+    )
 
     assert any(t.name == "custom" for t in registry.list_tools())
 
@@ -124,10 +126,13 @@ async def test_execute_bash_echo() -> None:
 async def test_execute_bash_timeout() -> None:
     """Bash tool respects timeout."""
     registry = ToolRegistry()
-    result = await registry.execute("bash", {
-        "command": "sleep 10",
-        "timeout": 1,
-    })
+    result = await registry.execute(
+        "bash",
+        {
+            "command": "sleep 10",
+            "timeout": 1,
+        },
+    )
     assert not result.success
     assert "timed out" in result.output.lower()
 
@@ -165,11 +170,14 @@ async def test_execute_read_file_with_offset_limit(tmp_path: Path) -> None:
     test_file.write_text("\n".join(f"line {i}" for i in range(1, 11)))
 
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("read_file", {
-        "path": "test.txt",
-        "offset": 3,
-        "limit": 2,
-    })
+    result = await registry.execute(
+        "read_file",
+        {
+            "path": "test.txt",
+            "offset": 3,
+            "limit": 2,
+        },
+    )
 
     assert result.success
     assert "line 4" in result.output
@@ -181,10 +189,13 @@ async def test_execute_read_file_with_offset_limit(tmp_path: Path) -> None:
 async def test_execute_write_file(tmp_path: Path) -> None:
     """write_file creates files."""
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("write_file", {
-        "path": "new_file.txt",
-        "content": "hello world",
-    })
+    result = await registry.execute(
+        "write_file",
+        {
+            "path": "new_file.txt",
+            "content": "hello world",
+        },
+    )
 
     assert result.success
     assert (tmp_path / "new_file.txt").read_text() == "hello world"
@@ -194,10 +205,13 @@ async def test_execute_write_file(tmp_path: Path) -> None:
 async def test_execute_write_file_creates_dirs(tmp_path: Path) -> None:
     """write_file creates parent directories."""
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("write_file", {
-        "path": "subdir/deep/file.txt",
-        "content": "nested",
-    })
+    result = await registry.execute(
+        "write_file",
+        {
+            "path": "subdir/deep/file.txt",
+            "content": "nested",
+        },
+    )
 
     assert result.success
     assert (tmp_path / "subdir" / "deep" / "file.txt").read_text() == "nested"
@@ -210,11 +224,14 @@ async def test_execute_edit_file(tmp_path: Path) -> None:
     test_file.write_text("def hello():\n    print('hello')\n")
 
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("edit_file", {
-        "path": "code.py",
-        "old_string": "print('hello')",
-        "new_string": "print('world')",
-    })
+    result = await registry.execute(
+        "edit_file",
+        {
+            "path": "code.py",
+            "old_string": "print('hello')",
+            "new_string": "print('world')",
+        },
+    )
 
     assert result.success
     assert "print('world')" in test_file.read_text()
@@ -224,11 +241,14 @@ async def test_execute_edit_file(tmp_path: Path) -> None:
 async def test_execute_edit_file_not_found(tmp_path: Path) -> None:
     """edit_file returns error for missing file."""
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("edit_file", {
-        "path": "missing.py",
-        "old_string": "x",
-        "new_string": "y",
-    })
+    result = await registry.execute(
+        "edit_file",
+        {
+            "path": "missing.py",
+            "old_string": "x",
+            "new_string": "y",
+        },
+    )
     assert not result.success
     assert "not found" in result.output.lower()
 
@@ -240,11 +260,14 @@ async def test_execute_edit_file_string_not_found(tmp_path: Path) -> None:
     test_file.write_text("def hello(): pass\n")
 
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("edit_file", {
-        "path": "code.py",
-        "old_string": "nonexistent string",
-        "new_string": "replacement",
-    })
+    result = await registry.execute(
+        "edit_file",
+        {
+            "path": "code.py",
+            "old_string": "nonexistent string",
+            "new_string": "replacement",
+        },
+    )
     assert not result.success
     assert "not found" in result.output.lower()
 
@@ -256,11 +279,14 @@ async def test_execute_edit_file_ambiguous(tmp_path: Path) -> None:
     test_file.write_text("x = 1\ny = x\nz = x\n")
 
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("edit_file", {
-        "path": "code.py",
-        "old_string": "x",
-        "new_string": "w",
-    })
+    result = await registry.execute(
+        "edit_file",
+        {
+            "path": "code.py",
+            "old_string": "x",
+            "new_string": "w",
+        },
+    )
     assert not result.success
     assert "times" in result.output.lower()
 
@@ -289,10 +315,13 @@ async def test_execute_grep(tmp_path: Path) -> None:
     (tmp_path / "b.py").write_text("class Foo:\n    pass\n")
 
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("grep", {
-        "pattern": "def hello",
-        "path": ".",
-    })
+    result = await registry.execute(
+        "grep",
+        {
+            "pattern": "def hello",
+            "path": ".",
+        },
+    )
 
     assert result.success
     assert "hello" in result.output
@@ -306,11 +335,14 @@ async def test_execute_grep_with_include(tmp_path: Path) -> None:
     (tmp_path / "b.txt").write_text("target line\n")
 
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("grep", {
-        "pattern": "target",
-        "path": ".",
-        "include": "**/*.py",
-    })
+    result = await registry.execute(
+        "grep",
+        {
+            "pattern": "target",
+            "path": ".",
+            "include": "**/*.py",
+        },
+    )
 
     assert result.success
     assert "a.py" in result.output
@@ -324,10 +356,13 @@ async def test_execute_grep_no_match(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("hello world\n")
 
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("grep", {
-        "pattern": "nonexistent_pattern",
-        "path": ".",
-    })
+    result = await registry.execute(
+        "grep",
+        {
+            "pattern": "nonexistent_pattern",
+            "path": ".",
+        },
+    )
 
     assert result.success
     assert "No matches" in result.output
@@ -341,10 +376,13 @@ async def test_execute_glob(tmp_path: Path) -> None:
     (tmp_path / "c.txt").write_text("hello")
 
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("glob", {
-        "pattern": "*.py",
-        "path": ".",
-    })
+    result = await registry.execute(
+        "glob",
+        {
+            "pattern": "*.py",
+            "path": ".",
+        },
+    )
 
     assert result.success
     assert "a.py" in result.output
@@ -361,10 +399,13 @@ async def test_execute_glob_recursive(tmp_path: Path) -> None:
     (tmp_path / "test.py").write_text("pass")
 
     registry = ToolRegistry(working_directory=str(tmp_path))
-    result = await registry.execute("glob", {
-        "pattern": "**/*.py",
-        "path": ".",
-    })
+    result = await registry.execute(
+        "glob",
+        {
+            "pattern": "**/*.py",
+            "path": ".",
+        },
+    )
 
     assert result.success
     assert "main.py" in result.output

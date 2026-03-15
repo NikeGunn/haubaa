@@ -23,9 +23,7 @@ def test_build_system_prompt_with_tools() -> None:
 
 def test_build_system_prompt_with_skill_context() -> None:
     """Skill context is appended to prompt."""
-    prompt = build_system_prompt(
-        skill_context="## REST API Design\n- Use RESTful conventions"
-    )
+    prompt = build_system_prompt(skill_context="## REST API Design\n- Use RESTful conventions")
     assert "REST API Design" in prompt
     assert "RESTful conventions" in prompt
 
@@ -38,9 +36,7 @@ def test_build_system_prompt_without_skill_context() -> None:
 
 def test_build_system_prompt_is_concise() -> None:
     """System prompt is reasonably short (~1000 tokens ≈ ~4000 chars)."""
-    prompt = build_system_prompt(
-        tool_names=["bash", "read_file", "write_file", "edit_file"]
-    )
+    prompt = build_system_prompt(tool_names=["bash", "read_file", "write_file", "edit_file"])
     # Should be under 3000 chars without skill context
     assert len(prompt) < 3000
 

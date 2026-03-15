@@ -177,11 +177,13 @@ async def test_engine_execute_with_tool_call() -> None:
     # First call: LLM wants to use a tool
     tool_response = LLMResponse(
         text="Let me list the files.",
-        tool_calls=[{
-            "id": "call_1",
-            "name": "read_file",
-            "input": {"path": "nonexistent.txt"},
-        }],
+        tool_calls=[
+            {
+                "id": "call_1",
+                "name": "read_file",
+                "input": {"path": "nonexistent.txt"},
+            }
+        ],
         input_tokens=10,
         output_tokens=20,
     )
@@ -215,6 +217,7 @@ async def test_engine_execute_timeout() -> None:
     # Mock LLM that takes forever
     async def slow_complete(**kwargs):
         import asyncio
+
         await asyncio.sleep(100)
 
     engine._llm.complete = slow_complete  # type: ignore

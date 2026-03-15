@@ -401,9 +401,7 @@ def init() -> None:
 
         console.print("  [green]+[/green] LiteLLM engine is installed")
     except ImportError:
-        console.print(
-            "  [yellow]![/yellow] LiteLLM not found. Install: pip install litellm"
-        )
+        console.print("  [yellow]![/yellow] LiteLLM not found. Install: pip install litellm")
     except Exception:
         console.print("  [green]+[/green] Engine check complete")
 
@@ -933,7 +931,9 @@ async def _run_task(
                             )
                         )
                     else:
-                        console.print(f"  [green]Task completed in {turns} turns (no output)[/green]")
+                        console.print(
+                            f"  [green]Task completed in {turns} turns (no output)[/green]"
+                        )
                 elif event.type == "timeout":
                     console.print("  [red]Task timed out[/red]")
                 elif event.type == "error":
