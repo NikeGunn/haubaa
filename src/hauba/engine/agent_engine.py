@@ -178,6 +178,8 @@ class AgentEngine:
 
     async def stop(self) -> None:
         """Clean up resources."""
+        if self._tools is not None:
+            await self._tools.cleanup_background_processes()
         self._started = False
         self._llm = None
         self._tools = None

@@ -35,10 +35,10 @@ def test_build_system_prompt_without_skill_context() -> None:
 
 
 def test_build_system_prompt_is_concise() -> None:
-    """System prompt is reasonably short (~1000 tokens ≈ ~4000 chars)."""
+    """System prompt is reasonably short (~1200 tokens ≈ ~5000 chars)."""
     prompt = build_system_prompt(tool_names=["bash", "read_file", "write_file", "edit_file"])
-    # Should be under 3000 chars without skill context
-    assert len(prompt) < 3000
+    # Should be under 4000 chars without skill context
+    assert len(prompt) < 4000
 
 
 def test_build_system_prompt_mentions_key_tools() -> None:
@@ -62,3 +62,16 @@ def test_build_system_prompt_mentions_verification() -> None:
     """System prompt tells agent to verify work."""
     prompt = build_system_prompt()
     assert "verify" in prompt.lower() or "test" in prompt.lower()
+
+
+def test_build_system_prompt_shell_behavior() -> None:
+    """System prompt teaches shell behavior rules."""
+    prompt = build_system_prompt()
+    # Must teach about cd not persisting
+    assert "cd" in prompt.lower() and "persist" in prompt.lower()
+    # Must mention cwd parameter
+    assert "cwd" in prompt
+    # Must mention background mode
+    assert "background" in prompt
+    # Must mention set_working_directory
+    assert "set_working_directory" in prompt

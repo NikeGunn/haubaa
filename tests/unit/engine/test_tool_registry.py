@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import platform
 from pathlib import Path
 
 import pytest
@@ -57,8 +58,9 @@ def test_registry_init_registers_core_tools() -> None:
     tools = registry.list_tools()
     tool_names = {t.name for t in tools}
 
-    # All 10 core tools should be registered
+    # All 11 core tools should be registered
     assert "bash" in tool_names
+    assert "set_working_directory" in tool_names
     assert "read_file" in tool_names
     assert "write_file" in tool_names
     assert "edit_file" in tool_names
@@ -75,7 +77,7 @@ def test_registry_get_tool_definitions() -> None:
     registry = ToolRegistry()
     defs = registry.get_tool_definitions()
 
-    assert len(defs) >= 10
+    assert len(defs) >= 11
     for d in defs:
         assert "name" in d
         assert "description" in d
@@ -422,3 +424,149 @@ async def test_execute_with_missing_params() -> None:
     result = await registry.execute("bash", {})
     assert not result.success
     assert "parameter" in result.output.lower() or "missing" in result.output.lower()
+
+
+# --- Bash cwd parameter ---
+
+
+@pytest.mark.asyncio
+async def test_bash_cwd_parameter(tmp_path: Path) -> None:
+    """Bash cwd runs command in specified directory."""
+    subdir = tmp_path / "myapp"
+    subdir.mkdir()
+    (subdir / "hello.txt").write_text("found")
+
+    registry = ToolRegistry(working_directory=str(tmp_path))
+    result = await registry.execute(
+        "bash",
+        {
+            "command": "cat hello.txt" if platform.system() != "Windows" else "type hello.txt",
+            "cwd": "myapp",
+        },
+    )
+
+    assert result.success
+    assert "found" in result.output
+
+
+@pytest.mark.asyncio
+async def test_bash_cwd_nonexistent(tmp_path: Path) -> None:
+    """Bash cwd returns error for nonexistent directory."""
+    registry = ToolRegistry(working_directory=str(tmp_path))
+    result = await registry.execute(
+        "bash",
+        {
+            "command": "echo hello",
+            "cwd": "nonexistent_dir",
+        },
+    )
+
+    assert not result.success
+    assert "not found" in result.output.lower() or "directory" in result.output.lower()
+
+
+@pytest.mark.asyncio
+async def test_bash_timeout_suggests_background() -> None:
+    """Bash timeout message suggests using background=true."""
+    registry = ToolRegistry()
+    result = await registry.execute(
+        "bash",
+        {
+            "command": "sleep 10",
+            "timeout": 1,
+        },
+    )
+    assert not result.success
+    assert "background" in result.output.lower()
+
+
+@pytest.mark.asyncio
+async def test_bash_background_mode(tmp_path: Path) -> None:
+    """Bash background mode returns immediately with PID."""
+    registry = ToolRegistry(working_directory=str(tmp_path))
+    result = await registry.execute(
+        "bash",
+        {
+            "command": "sleep 60",
+            "background": True,
+        },
+    )
+
+    assert result.success
+    assert "PID" in result.output
+    assert "background" in result.output.lower()
+    assert len(registry._background_processes) > 0
+
+    # Cleanup
+    await registry.cleanup_background_processes()
+    assert len(registry._background_processes) == 0
+
+
+# --- set_working_directory ---
+
+
+@pytest.mark.asyncio
+async def test_set_working_directory(tmp_path: Path) -> None:
+    """set_working_directory changes the persistent working directory."""
+    subdir = tmp_path / "myproject"
+    subdir.mkdir()
+    (subdir / "test.txt").write_text("project file")
+
+    registry = ToolRegistry(working_directory=str(tmp_path))
+    result = await registry.execute("set_working_directory", {"path": "myproject"})
+
+    assert result.success
+    assert "myproject" in result.output
+
+    # Now read_file should work relative to new directory
+    result2 = await registry.execute("read_file", {"path": "test.txt"})
+    assert result2.success
+    assert "project file" in result2.output
+
+
+@pytest.mark.asyncio
+async def test_set_working_directory_nonexistent(tmp_path: Path) -> None:
+    """set_working_directory returns error for nonexistent directory."""
+    registry = ToolRegistry(working_directory=str(tmp_path))
+    result = await registry.execute("set_working_directory", {"path": "nonexistent"})
+
+    assert not result.success
+    assert "not a directory" in result.output.lower()
+
+
+@pytest.mark.asyncio
+async def test_set_working_directory_affects_bash(tmp_path: Path) -> None:
+    """set_working_directory affects bash default cwd."""
+    subdir = tmp_path / "myapp"
+    subdir.mkdir()
+    (subdir / "hello.txt").write_text("hello from myapp")
+
+    registry = ToolRegistry(working_directory=str(tmp_path))
+    await registry.execute("set_working_directory", {"path": "myapp"})
+
+    result = await registry.execute(
+        "bash",
+        {
+            "command": "cat hello.txt" if platform.system() != "Windows" else "type hello.txt",
+        },
+    )
+
+    assert result.success
+    assert "hello from myapp" in result.output
+
+
+# --- Cleanup ---
+
+
+@pytest.mark.asyncio
+async def test_cleanup_background_processes(tmp_path: Path) -> None:
+    """cleanup_background_processes kills all background processes."""
+    registry = ToolRegistry(working_directory=str(tmp_path))
+
+    # Start a background process
+    await registry.execute("bash", {"command": "sleep 600", "background": True})
+
+    assert len(registry._background_processes) == 1
+
+    await registry.cleanup_background_processes()
+    assert len(registry._background_processes) == 0

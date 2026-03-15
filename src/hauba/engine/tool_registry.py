@@ -80,11 +80,13 @@ class ToolRegistry:
     def __init__(self, working_directory: str = ".") -> None:
         self._working_directory = os.path.abspath(working_directory)
         self._tools: dict[str, ToolDefinition] = {}
+        self._background_processes: dict[int, Any] = {}
         self._register_core_tools()
 
     def _register_core_tools(self) -> None:
         """Register all core tools."""
         self._register_bash()
+        self._register_set_working_directory()
         self._register_read_file()
         self._register_write_file()
         self._register_edit_file()
@@ -131,17 +133,33 @@ class ToolRegistry:
     # ─── BASH ────────────────────────────────────────────────────────
 
     def _register_bash(self) -> None:
-        async def bash(command: str, timeout: int = SHELL_TIMEOUT) -> ToolResult:
+        async def bash(
+            command: str,
+            cwd: str = "",
+            timeout: int = SHELL_TIMEOUT,
+            background: bool = False,
+        ) -> ToolResult:
             """Run a shell command."""
             try:
-                # Use appropriate shell
+                # Resolve working directory
+                if cwd:
+                    effective_cwd = os.path.abspath(
+                        os.path.join(self._working_directory, cwd)
+                    )
+                    if not os.path.isdir(effective_cwd):
+                        return ToolResult.error(
+                            f"Directory not found: {cwd} (resolved to {effective_cwd})"
+                        )
+                else:
+                    effective_cwd = self._working_directory
+
+                # Create subprocess
                 if platform.system() == "Windows":
-                    shell_cmd = command
                     proc = await asyncio.create_subprocess_shell(
-                        shell_cmd,
+                        command,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
-                        cwd=self._working_directory,
+                        cwd=effective_cwd,
                     )
                 else:
                     proc = await asyncio.create_subprocess_exec(
@@ -150,10 +168,28 @@ class ToolRegistry:
                         command,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
-                        cwd=self._working_directory,
+                        cwd=effective_cwd,
                     )
 
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                # Background mode: collect initial output and return immediately
+                if background:
+                    initial = await _collect_initial_output(proc, seconds=5)
+                    pid = proc.pid or 0
+                    self._background_processes[pid] = proc
+                    return ToolResult.ok(
+                        f"Process started in background (PID: {pid}).\n"
+                        f"Working directory: {effective_cwd}\n"
+                        f"Initial output:\n{initial}\n"
+                        f"The process is running. To stop it: "
+                        f"bash(command='kill {pid}') on Unix or "
+                        f"bash(command='taskkill /F /PID {pid}') on Windows.",
+                        pid=pid,
+                    )
+
+                # Normal synchronous execution
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout
+                )
 
                 output = stdout.decode("utf-8", errors="replace")
                 err = stderr.decode("utf-8", errors="replace")
@@ -166,17 +202,22 @@ class ToolRegistry:
                 return ToolResult.ok(output, exit_code=proc.returncode)
 
             except TimeoutError:
-                return ToolResult.error(f"Command timed out after {timeout}s")
+                return ToolResult.error(
+                    f"Command timed out after {timeout}s. "
+                    "If this is a long-running process (dev server, watcher), "
+                    "use background=true instead."
+                )
             except Exception as e:
                 return ToolResult.error(f"Shell error: {e}")
 
         self._tools["bash"] = ToolDefinition(
             name="bash",
             description=(
-                "Run a shell command on the local machine. Use for: executing code, "
-                "installing packages (pip/npm/apt), running tests, git operations, "
-                "file manipulation, and any system operations. Returns stdout, stderr, "
-                "and exit code."
+                "Run a shell command. Use for: executing code, installing packages, "
+                "running tests, git operations, system commands. "
+                "IMPORTANT: Each call runs in an isolated shell — 'cd' does NOT persist. "
+                "Use the 'cwd' parameter to run commands in a subdirectory. "
+                "For long-running processes (dev servers, watchers), use background=true."
             ),
             parameters={
                 "type": "object",
@@ -185,15 +226,81 @@ class ToolRegistry:
                         "type": "string",
                         "description": "The shell command to execute.",
                     },
+                    "cwd": {
+                        "type": "string",
+                        "description": (
+                            "Working directory for this command (relative or absolute). "
+                            "Use this instead of 'cd'. Example: cwd='my-app' to run inside my-app/."
+                        ),
+                    },
                     "timeout": {
                         "type": "integer",
                         "description": "Timeout in seconds (default 120).",
+                    },
+                    "background": {
+                        "type": "boolean",
+                        "description": (
+                            "Run the command in background (default false). "
+                            "Use for dev servers, watchers, or any long-running process. "
+                            "Returns immediately with PID and initial output."
+                        ),
                     },
                 },
                 "required": ["command"],
             },
             execute_fn=bash,
         )
+
+    # ─── SET WORKING DIRECTORY ────────────────────────────────────────
+
+    def _register_set_working_directory(self) -> None:
+        async def set_working_directory(path: str) -> ToolResult:
+            """Change the persistent working directory for ALL tools."""
+            resolved = os.path.abspath(os.path.join(self._working_directory, path))
+            if not os.path.isdir(resolved):
+                return ToolResult.error(f"Not a directory: {path} (resolved to {resolved})")
+            old = self._working_directory
+            self._working_directory = resolved
+            return ToolResult.ok(
+                f"Working directory changed: {old} → {resolved}\n"
+                "All tools (bash, read_file, write_file, etc.) now operate relative to this path."
+            )
+
+        self._tools["set_working_directory"] = ToolDefinition(
+            name="set_working_directory",
+            description=(
+                "Change the persistent working directory for ALL subsequent tool calls. "
+                "Equivalent to 'cd' but persists across calls. Affects bash cwd default, "
+                "read_file, write_file, edit_file, list_directory, grep, and glob."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory path (relative to current working directory, or absolute).",
+                    },
+                },
+                "required": ["path"],
+            },
+            execute_fn=set_working_directory,
+        )
+
+    # ─── CLEANUP ──────────────────────────────────────────────────────
+
+    async def cleanup_background_processes(self) -> None:
+        """Kill all background processes. Called when engine stops."""
+        for pid, proc in list(self._background_processes.items()):
+            try:
+                proc.kill()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except TimeoutError:
+                    pass  # Process didn't exit cleanly, but we killed it
+                logger.info("tool.background_killed", pid=pid)
+            except Exception:
+                pass
+        self._background_processes.clear()
 
     # ─── READ FILE ───────────────────────────────────────────────────
 
@@ -789,6 +896,27 @@ def _list_recursive(
             if pattern == "*" or item.match(pattern):
                 file_size = item.stat().st_size
                 entries.append(f"{line_prefix}{rel}  ({_human_size(file_size)})")
+
+
+async def _collect_initial_output(proc: Any, seconds: float = 5.0) -> str:
+    """Collect initial output from a background process for a few seconds."""
+    lines: list[str] = []
+    try:
+        end_time = asyncio.get_event_loop().time() + seconds
+        while asyncio.get_event_loop().time() < end_time:
+            if proc.stdout is None:
+                break
+            try:
+                line = await asyncio.wait_for(proc.stdout.readline(), timeout=1.0)
+                if line:
+                    lines.append(line.decode("utf-8", errors="replace").rstrip())
+                else:
+                    break  # Process ended
+            except TimeoutError:
+                continue
+    except Exception:
+        pass
+    return "\n".join(lines) if lines else "(no output yet)"
 
 
 def _human_size(size: int) -> str:
