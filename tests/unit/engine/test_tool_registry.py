@@ -572,6 +572,42 @@ async def test_cleanup_background_processes(tmp_path: Path) -> None:
     assert len(registry._background_processes) == 0
 
 
+@pytest.mark.asyncio
+async def test_background_process_cap(tmp_path: Path) -> None:
+    """Cannot exceed MAX_BACKGROUND_PROCESSES concurrent background processes."""
+    from hauba.engine.tool_registry import MAX_BACKGROUND_PROCESSES
+
+    registry = ToolRegistry(working_directory=str(tmp_path))
+
+    # Fill up to the limit
+    for i in range(MAX_BACKGROUND_PROCESSES):
+        result = await registry.execute("bash", {"command": f"sleep {600 + i}", "background": True})
+        assert result.success, f"Process {i} should start: {result.output}"
+
+    # Next one should be rejected
+    result = await registry.execute("bash", {"command": "sleep 999", "background": True})
+    assert not result.success
+    assert "too many" in result.output.lower()
+
+    # Cleanup
+    await registry.cleanup_background_processes()
+
+
+@pytest.mark.asyncio
+async def test_bash_timeout_kills_process() -> None:
+    """Bash timeout kills the process (not just returns error)."""
+    registry = ToolRegistry()
+    result = await registry.execute(
+        "bash",
+        {
+            "command": "sleep 60",
+            "timeout": 2,
+        },
+    )
+    assert not result.success
+    assert "killed" in result.output.lower()
+
+
 # --- Tracker integration ---
 
 

@@ -35,10 +35,10 @@ def test_build_system_prompt_without_skill_context() -> None:
 
 
 def test_build_system_prompt_is_concise() -> None:
-    """System prompt is reasonably short (~1200 tokens ≈ ~5000 chars)."""
+    """System prompt is reasonably short (~2000 tokens ≈ ~8000 chars)."""
     prompt = build_system_prompt(tool_names=["bash", "read_file", "write_file", "edit_file"])
-    # Should be under 4000 chars without skill context
-    assert len(prompt) < 4000
+    # Should be under 6000 chars without skill context (includes safety rules)
+    assert len(prompt) < 6000
 
 
 def test_build_system_prompt_mentions_key_tools() -> None:
@@ -75,3 +75,15 @@ def test_build_system_prompt_shell_behavior() -> None:
     assert "background" in prompt
     # Must mention set_working_directory
     assert "set_working_directory" in prompt
+
+
+def test_build_system_prompt_resource_safety() -> None:
+    """System prompt includes resource safety rules."""
+    prompt = build_system_prompt()
+    # Must warn about blocking commands
+    assert "background=true" in prompt
+    # Must mention process limits
+    assert "3 background" in prompt.lower() or "max 3" in prompt.lower()
+    # Must warn about dangerous commands
+    assert "never" in prompt.lower()
+    assert "shutdown" in prompt.lower() or "fork bomb" in prompt.lower()

@@ -666,7 +666,7 @@ class WhatsAppBot:
         return f"Error: {error}"
 
     async def _execute_with_engine(self, session: UserSession, body: str) -> Any:
-        """Run the message through AgentEngine (V3)."""
+        """Run the message through AgentEngine (V4) with resource guards."""
         from hauba.engine.agent_engine import AgentEngine
         from hauba.engine.types import EngineConfig, ProviderType
 

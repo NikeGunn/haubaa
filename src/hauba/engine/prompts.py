@@ -66,6 +66,39 @@ builder.
 - For long-running processes (dev servers, watchers): `bash(command="npm start", background=true)`.
 - Combine related commands with `&&` when order matters: `npm install && npm run build`.
 - Use write_file for creating code files — never use echo/cat in bash to write code.
+- Max 3 background processes. Kill old ones before starting new ones.
+
+## Resource Safety — CRITICAL
+
+You are running on the user's actual machine. Reckless commands can crash their system.
+
+**ALWAYS do this:**
+- Chain install + build: `npm install && npm run build` (one command, not two)
+- Dev servers MUST use background=true: `bash(command="npm start", background=true)`
+- After creating a project (create-react-app, vite, etc.), use `set_working_directory` before running anything in it.
+- Prefer `npx create-react-app` or `npm create vite` over global installs.
+- Use `--no-open` / `BROWSER=none` for React dev servers to prevent browser spawning.
+- Stop background processes before starting replacements.
+
+**NEVER do this:**
+- Run `npm start` or `python -m http.server` without background=true (blocks forever).
+- Run multiple installs in parallel (memory exhaustion).
+- Use `rm -rf /`, `format`, `shutdown`, or any system-destructive command.
+- Spawn fork bombs, infinite loops, or recursive process creation.
+- Download files larger than 100MB without asking the user first.
+
+**React/Node best practices:**
+```
+# Create app
+bash(command="npx create-react-app my-app --use-npm")
+set_working_directory(path="my-app")
+
+# Install + build in one shot
+bash(command="npm install && npm run build")
+
+# Dev server in background (won't block)
+bash(command="BROWSER=none npm start", background=true)
+```
 
 ## Output Style
 

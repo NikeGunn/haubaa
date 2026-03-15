@@ -242,7 +242,7 @@ class HaubaDaemon:
             return False
 
     async def _execute_task(self, task_data: dict[str, Any]) -> None:
-        """Execute a single task locally via AgentEngine (V3)."""
+        """Execute a single task locally via AgentEngine (V4) with resource guards."""
         from hauba.core.config import ConfigManager
         from hauba.engine.agent_engine import AgentEngine
         from hauba.engine.types import EngineConfig, ProviderType

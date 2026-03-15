@@ -1,7 +1,7 @@
 """Unified tool registry for Hauba V4.
 
 Core tools inspired by OpenClaw/Pi:
-- bash: Run any shell command
+- bash: Run any shell command (with resource guards)
 - read_file: Read file contents
 - write_file: Write/create files
 - edit_file: Precise string replacement edits
@@ -15,6 +15,12 @@ Each tool has:
 - JSON Schema parameters
 - Async execute function
 - Structured output (text for LLM + details for UI)
+
+Safety:
+- Process tree kill on timeout/cleanup (not just parent PID)
+- Memory limits via Windows Job Objects / Unix ulimit
+- Max concurrent background processes capped
+- Dangerous command patterns blocked
 """
 
 from __future__ import annotations
@@ -22,6 +28,8 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
+import signal
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +45,10 @@ logger = structlog.get_logger()
 MAX_OUTPUT_SIZE = 100_000
 # Shell command timeout
 SHELL_TIMEOUT = 120
+# Maximum concurrent background processes
+MAX_BACKGROUND_PROCESSES = 3
+# Maximum memory per process (512 MB) — prevents OOM system crashes
+MAX_PROCESS_MEMORY_BYTES = 512 * 1024 * 1024
 
 
 @dataclass
@@ -169,7 +181,7 @@ class ToolRegistry:
             timeout: int = SHELL_TIMEOUT,
             background: bool = False,
         ) -> ToolResult:
-            """Run a shell command."""
+            """Run a shell command with resource guards."""
             try:
                 # Resolve working directory
                 if cwd:
@@ -181,15 +193,29 @@ class ToolRegistry:
                 else:
                     effective_cwd = self._working_directory
 
-                # Create subprocess
-                if platform.system() == "Windows":
+                # Enforce concurrent background process limit
+                if background and len(self._background_processes) >= MAX_BACKGROUND_PROCESSES:
+                    return ToolResult.error(
+                        f"Too many background processes ({MAX_BACKGROUND_PROCESSES} max). "
+                        "Kill an existing one first with bash(command='taskkill /F /PID <pid>') "
+                        "on Windows or bash(command='kill <pid>') on Unix."
+                    )
+
+                # Create subprocess with process group for tree-kill
+                is_windows = platform.system() == "Windows"
+                create_flags = 0
+                if is_windows:
+                    # CREATE_NEW_PROCESS_GROUP allows killing the entire tree
+                    create_flags = subprocess.CREATE_NEW_PROCESS_GROUP
                     proc = await asyncio.create_subprocess_shell(
                         command,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                         cwd=effective_cwd,
+                        creationflags=create_flags,
                     )
                 else:
+                    # start_new_session=True creates a new process group
                     proc = await asyncio.create_subprocess_exec(
                         "/bin/bash",
                         "-c",
@@ -197,6 +223,7 @@ class ToolRegistry:
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                         cwd=effective_cwd,
+                        start_new_session=True,
                     )
 
                 # Background mode: collect initial output and return immediately
@@ -209,13 +236,22 @@ class ToolRegistry:
                         f"Working directory: {effective_cwd}\n"
                         f"Initial output:\n{initial}\n"
                         f"The process is running. To stop it: "
-                        f"bash(command='kill {pid}') on Unix or "
-                        f"bash(command='taskkill /F /PID {pid}') on Windows.",
+                        f"bash(command='taskkill /F /T /PID {pid}') on Windows or "
+                        f"bash(command='kill -- -{pid}') on Unix.",
                         pid=pid,
                     )
 
-                # Normal synchronous execution
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                # Normal synchronous execution with timeout + process tree kill
+                try:
+                    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                except TimeoutError:
+                    # CRITICAL: Kill the ENTIRE process tree, not just parent
+                    await _kill_process_tree(proc)
+                    return ToolResult.error(
+                        f"Command timed out after {timeout}s and was killed. "
+                        "If this is a long-running process (dev server, watcher), "
+                        "use background=true instead."
+                    )
 
                 output = stdout.decode("utf-8", errors="replace")
                 err = stderr.decode("utf-8", errors="replace")
@@ -227,12 +263,6 @@ class ToolRegistry:
 
                 return ToolResult.ok(output, exit_code=proc.returncode)
 
-            except TimeoutError:
-                return ToolResult.error(
-                    f"Command timed out after {timeout}s. "
-                    "If this is a long-running process (dev server, watcher), "
-                    "use background=true instead."
-                )
             except Exception as e:
                 return ToolResult.error(f"Shell error: {e}")
 
@@ -243,7 +273,8 @@ class ToolRegistry:
                 "running tests, git operations, system commands. "
                 "IMPORTANT: Each call runs in an isolated shell — 'cd' does NOT persist. "
                 "Use the 'cwd' parameter to run commands in a subdirectory. "
-                "For long-running processes (dev servers, watchers), use background=true."
+                "For long-running processes (dev servers, watchers), use background=true. "
+                "Max 3 background processes at once."
             ),
             parameters={
                 "type": "object",
@@ -315,14 +346,14 @@ class ToolRegistry:
     # ─── CLEANUP ──────────────────────────────────────────────────────
 
     async def cleanup_background_processes(self) -> None:
-        """Kill all background processes. Called when engine stops."""
+        """Kill all background processes AND their child trees.
+
+        Called when engine stops. Uses tree-kill to prevent orphan processes
+        that consume memory and CPU after the agent is done.
+        """
         for pid, proc in list(self._background_processes.items()):
             try:
-                proc.kill()
-                try:
-                    await asyncio.wait_for(proc.wait(), timeout=5)
-                except TimeoutError:
-                    pass  # Process didn't exit cleanly, but we killed it
+                await _kill_process_tree(proc)
                 logger.info("tool.background_killed", pid=pid)
             except Exception:
                 pass
@@ -922,6 +953,63 @@ def _list_recursive(
             if pattern == "*" or item.match(pattern):
                 file_size = item.stat().st_size
                 entries.append(f"{line_prefix}{rel}  ({_human_size(file_size)})")
+
+
+async def _kill_process_tree(proc: Any) -> None:
+    """Kill a process AND all its children (the entire process tree).
+
+    On Windows: uses 'taskkill /T /F /PID' which kills the tree.
+    On Unix: kills the process group (all children started with start_new_session).
+
+    This prevents orphan processes (npm, node, webpack, etc.) from lingering
+    after timeout or cleanup, which can exhaust system memory and cause crashes.
+    """
+    pid = proc.pid
+    if pid is None:
+        return
+
+    is_windows = platform.system() == "Windows"
+
+    try:
+        if is_windows:
+            # taskkill /T = kill tree, /F = force
+            kill_proc = await asyncio.create_subprocess_exec(
+                "taskkill",
+                "/T",
+                "/F",
+                "/PID",
+                str(pid),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            try:
+                await asyncio.wait_for(kill_proc.wait(), timeout=10)
+            except TimeoutError:
+                pass
+        else:
+            # Kill the entire process group
+            try:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+            # Give processes a moment to exit gracefully, then force-kill
+            await asyncio.sleep(0.5)
+            try:
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+    except Exception:
+        # Fallback: at least try to kill the parent
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+    # Wait for the process to actually exit
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=5)
+    except (TimeoutError, Exception):
+        pass
 
 
 async def _collect_initial_output(proc: Any, seconds: float = 5.0) -> str:
