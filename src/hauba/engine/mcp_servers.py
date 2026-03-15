@@ -1,7 +1,9 @@
-"""MCP server management for Hauba V3.
+"""MCP server management for Hauba V4.
 
-Manages Playwright MCP and other MCP server connections for agent tools.
-Uses the OpenAI Agents SDK's MCPServerStdio for subprocess-based MCP.
+Manages optional MCP server connections. In V4, MCP servers are
+supplementary — the core tools (bash, read, write, edit, grep, glob)
+handle most tasks. MCP servers add specialized capabilities like
+browser automation.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ def create_playwright_mcp(
 ) -> Any | None:
     """Create a Playwright MCP server instance.
 
-    Requires Node.js and npx to be installed. The @playwright/mcp package
+    Requires Node.js and npx. The @playwright/mcp package
     is automatically fetched via npx on first use.
 
     Args:
@@ -34,17 +36,17 @@ def create_playwright_mcp(
         viewport: Browser viewport size (default "1280x720").
 
     Returns:
-        MCPServerStdio instance or None if npx not available.
+        MCPServerStdio instance or None if unavailable.
     """
     try:
         from agents.mcp import MCPServerStdio
     except ImportError:
-        logger.warning("mcp.agents_sdk_not_installed")
+        logger.debug("mcp.agents_sdk_not_installed")
         return None
 
     npx = _find_npx()
     if not npx:
-        logger.warning("mcp.npx_not_found", hint="Install Node.js to enable browser automation")
+        logger.debug("mcp.npx_not_found")
         return None
 
     args = ["-y", "@playwright/mcp@latest"]
@@ -69,7 +71,7 @@ def create_filesystem_mcp(workspace_dir: str) -> Any | None:
         workspace_dir: The directory to expose to the agent.
 
     Returns:
-        MCPServerStdio instance or None if npx not available.
+        MCPServerStdio instance or None if unavailable.
     """
     try:
         from agents.mcp import MCPServerStdio

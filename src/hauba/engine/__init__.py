@@ -1,7 +1,7 @@
-"""Hauba Engine — OpenAI Agents SDK powered agentic runtime (V3).
+"""Hauba Engine — Custom agent loop runtime (V4).
 
-Multi-agent orchestration with MCP server integration,
-any LLM provider via LiteLLM, and BYOK support.
+Direct LLM API calls with full tool control, auto-compaction,
+streaming, and zero SDK delegation. Inspired by OpenClaw/Pi.
 """
 
 from hauba.engine.agent_engine import AgentEngine

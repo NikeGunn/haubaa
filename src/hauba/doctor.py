@@ -174,18 +174,18 @@ class Doctor:
 
     def _check_copilot_sdk(self) -> CheckResult:
         try:
-            import agents
+            import litellm
 
-            version = getattr(agents, "__version__", "installed")
+            version = getattr(litellm, "__version__", "installed")
             return CheckResult(
-                name="OpenAI Agents SDK",
+                name="LiteLLM Engine",
                 passed=True,
                 message=f"Version {version}",
             )
         except ImportError:
             return CheckResult(
-                name="OpenAI Agents SDK",
+                name="LiteLLM Engine",
                 passed=False,
                 message="Not installed",
-                suggestion="Run: pip install 'openai-agents[litellm]'",
+                suggestion="Run: pip install litellm",
             )

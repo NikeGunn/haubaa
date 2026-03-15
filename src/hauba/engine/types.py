@@ -1,4 +1,4 @@
-"""Type definitions for the Hauba Engine."""
+"""Type definitions for the Hauba Engine V4."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ class ProviderType(str, Enum):
     OPENAI = "openai"
     AZURE = "azure"
     OLLAMA = "ollama"
+    DEEPSEEK = "deepseek"
+    GOOGLE = "google"
 
 
 @dataclass
@@ -25,12 +27,13 @@ class EngineConfig:
     Attributes:
         provider: The LLM provider type.
         api_key: User's API key for the provider.
-        model: Model identifier (e.g., "claude-sonnet-4.5", "gpt-4").
+        model: Model identifier (e.g., "claude-sonnet-4-5-20250514", "gpt-4o").
         base_url: Optional custom API endpoint URL.
         working_directory: Directory where the agent operates.
         skill_directories: Directories to load skills from.
         streaming: Whether to stream responses.
-        copilot_cli_path: Path to copilot CLI binary.
+        session_persist: Whether to persist session state.
+        auto_install_deps: Whether to auto-install dependencies.
     """
 
     provider: ProviderType = ProviderType.ANTHROPIC
@@ -40,34 +43,36 @@ class EngineConfig:
     working_directory: str = "."
     skill_directories: list[str] = field(default_factory=list)
     streaming: bool = True
-    copilot_cli_path: str | None = None
+    copilot_cli_path: str | None = None  # V3 compat — unused in V4
     session_persist: bool = True
     auto_install_deps: bool = True
 
     def to_provider_config(self) -> dict[str, Any]:
-        """Convert to Copilot SDK ProviderConfig format."""
+        """Convert to provider config format (V3 compat)."""
         config: dict[str, Any] = {}
+        provider = self.provider.value if hasattr(self.provider, "value") else str(self.provider)
 
-        if self.provider == ProviderType.ANTHROPIC:
+        if provider == "anthropic":
             config["type"] = "anthropic"
             config["base_url"] = self.base_url or "https://api.anthropic.com"
-            if self.api_key:
-                config["api_key"] = self.api_key
-        elif self.provider == ProviderType.OPENAI:
+        elif provider == "openai":
             config["type"] = "openai"
             config["base_url"] = self.base_url or "https://api.openai.com/v1"
-            if self.api_key:
-                config["api_key"] = self.api_key
-        elif self.provider == ProviderType.AZURE:
+        elif provider == "azure":
             config["type"] = "azure"
             if self.base_url:
                 config["base_url"] = self.base_url
-            if self.api_key:
-                config["api_key"] = self.api_key
-        elif self.provider == ProviderType.OLLAMA:
+        elif provider == "ollama":
             config["type"] = "openai"
             config["base_url"] = self.base_url or "http://localhost:11434/v1"
-            # Ollama doesn't need an API key
+        elif provider == "deepseek":
+            config["type"] = "deepseek"
+            config["base_url"] = self.base_url or "https://api.deepseek.com"
+        elif provider == "google":
+            config["type"] = "google"
+
+        if self.api_key:
+            config["api_key"] = self.api_key
 
         return config
 
@@ -77,7 +82,7 @@ class EngineEvent:
     """An event emitted during engine execution.
 
     Attributes:
-        type: Event type string (e.g., "assistant.message", "tool.execution_start").
+        type: Event type string (e.g., "engine.tool_start", "engine.llm_call").
         data: Event-specific data.
         timestamp: When the event occurred.
     """
@@ -96,7 +101,7 @@ class EngineResult:
         output: The final output text.
         events: List of events that occurred during execution.
         error: Error message if failed.
-        session_id: The Copilot session ID (for resumption).
+        session_id: Session ID (for resumption).
     """
 
     success: bool

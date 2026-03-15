@@ -1,40 +1,47 @@
-"""AgentEngine — Hauba V3 execution brain.
+"""AgentEngine — Hauba V4 execution brain.
 
-Powered by the OpenAI Agents SDK. Replaces the V2 CopilotEngine.
-
-Features:
-- Multi-agent orchestration (Director → Coder/Browser/Reviewer)
-- MCP server integration (Playwright MCP for browser)
-- Any LLM provider via LiteLLM
-- Streaming events for real-time UI
-- Session persistence
-- Function tools (web search, web fetch, email)
+Custom agent loop inspired by OpenClaw/Pi architecture.
+No SDK delegation — direct LLM API calls with full tool control.
 
 Architecture:
-    User Request → AgentEngine → OpenAI Agents SDK
-                                      ↓
-                              DirectorAgent (plans, delegates)
-                                 ↓      ↓       ↓
-                           Coder   Browser   Reviewer
-                             ↓        ↓
-                       Shell/Patch  Playwright MCP
+    1. User sends message
+    2. LLM receives message + system prompt + tool definitions
+    3. LLM responds with tool_use calls (standard API feature)
+    4. Hauba executes tools locally, feeds results back
+    5. LLM reasons about results, calls more tools or responds
+    6. Loop continues until task is done
+
+Key innovations over V3:
+- Custom turn-based loop (not delegated to SDK)
+- Full visibility into every turn
+- Auto-compaction when approaching context limits
+- Token-level streaming with tool interleaving
+- Progressive tool disclosure
+- Single-agent with all tools (no handoff overhead)
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from collections.abc import AsyncIterator, Callable
-from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Any
 
 import structlog
 
+from hauba.engine.context import ContextManager
+from hauba.engine.llm import LLMClient, LLMResponse
+from hauba.engine.prompts import build_system_prompt
+from hauba.engine.tool_registry import ToolRegistry
 from hauba.engine.types import EngineConfig, EngineEvent, EngineResult
 
 logger = structlog.get_logger()
+
+# Maximum turns before forcing stop (safety valve)
+MAX_TURNS = 200
+# Default timeout per task (seconds)
+DEFAULT_TIMEOUT = 600.0
 
 
 @dataclass
@@ -50,11 +57,23 @@ class StreamEvent:
             self.timestamp = time.time()
 
 
-class AgentEngine:
-    """The V3 execution brain for Hauba AI Workstation.
+@dataclass
+class TurnResult:
+    """Result of a single agent turn."""
 
-    Wraps the OpenAI Agents SDK to provide multi-agent orchestration
-    with MCP server integration for browser automation and file access.
+    response_text: str = ""
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    tool_results: list[dict[str, Any]] = field(default_factory=list)
+    stop_reason: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+class AgentEngine:
+    """The V4 execution brain for Hauba AI.
+
+    Custom agent loop — direct LLM calls, full tool control,
+    auto-compaction, streaming. Inspired by OpenClaw/Pi.
 
     Example:
         >>> config = EngineConfig(
@@ -72,15 +91,23 @@ class AgentEngine:
         self._skill_context = skill_context
         self._events: list[EngineEvent] = []
         self._event_handlers: list[Callable[[EngineEvent], None]] = []
-        self._exit_stack: AsyncExitStack | None = None
-        self._mcp_servers: list[Any] = []
-        self._director: Any = None
+
+        # Core components
+        self._llm: LLMClient | None = None
+        self._tools: ToolRegistry | None = None
+        self._context: ContextManager | None = None
+        self._started = False
+
+        # Stats
+        self._total_input_tokens = 0
+        self._total_output_tokens = 0
+        self._total_turns = 0
 
     @property
     def is_available(self) -> bool:
-        """Check if the OpenAI Agents SDK is available."""
+        """Check if litellm is available for LLM calls."""
         try:
-            import agents  # noqa: F401
+            import litellm  # noqa: F401
 
             return True
         except ImportError:
@@ -107,41 +134,54 @@ class AgentEngine:
                 logger.warning("engine.event_handler_error", error=str(e))
 
     async def start(self) -> None:
-        """Initialize MCP servers and agent team."""
-        self._configure_env()
+        """Initialize LLM client, tools, and context manager."""
+        if self._started:
+            return
 
-        self._exit_stack = AsyncExitStack()
-        await self._exit_stack.__aenter__()
-
-        # Start MCP servers
-        self._mcp_servers = await self._start_mcp_servers()
-
-        # Build model identifier
-        model = self._resolve_model()
-
-        # Create agent team
-        from hauba.engine.agents import create_agent_team
-
-        self._director = create_agent_team(
-            model=model,
-            mcp_servers=self._mcp_servers,
-            skill_context=self._skill_context,
+        # Build tool registry
+        self._tools = ToolRegistry(
             working_directory=self._config.working_directory or ".",
         )
 
-        self._emit("engine.started", {"model": model, "mcp_servers": len(self._mcp_servers)})
-        logger.info("engine.started", model=model, mcp_count=len(self._mcp_servers))
+        # Build LLM client
+        self._llm = LLMClient(
+            provider=self._config.provider,
+            api_key=self._config.api_key,
+            model=self._config.model,
+            base_url=self._config.base_url,
+        )
+
+        # Build context manager
+        system_prompt = build_system_prompt(
+            skill_context=self._skill_context,
+            tool_names=[t.name for t in self._tools.list_tools()],
+        )
+        self._context = ContextManager(
+            system_prompt=system_prompt,
+            max_context_tokens=120_000,
+            compaction_threshold=0.75,
+        )
+
+        self._started = True
+        self._emit(
+            "engine.started",
+            {
+                "model": self._config.model,
+                "tools": len(self._tools.list_tools()),
+            },
+        )
+        logger.info(
+            "engine.started",
+            model=self._config.model,
+            tool_count=len(self._tools.list_tools()),
+        )
 
     async def stop(self) -> None:
-        """Shut down MCP servers and clean up."""
-        if self._exit_stack:
-            try:
-                await self._exit_stack.aclose()
-            except Exception:
-                pass
-            self._exit_stack = None
-        self._mcp_servers = []
-        self._director = None
+        """Clean up resources."""
+        self._started = False
+        self._llm = None
+        self._tools = None
+        self._context = None
         self._emit("engine.stopped")
         logger.info("engine.stopped")
 
@@ -149,39 +189,58 @@ class AgentEngine:
         self,
         instruction: str,
         *,
-        timeout: float = 600.0,
+        timeout: float = DEFAULT_TIMEOUT,
     ) -> EngineResult:
-        """Execute a task using the multi-agent team.
+        """Execute a task using the agent loop.
+
+        The loop:
+        1. Send messages to LLM with tool definitions
+        2. If LLM returns tool_use → execute tools → feed results back → loop
+        3. If LLM returns text only → done
 
         Args:
             instruction: What to build/do (plain English).
-            timeout: Maximum execution time in seconds (default: 10 minutes).
+            timeout: Maximum execution time in seconds.
 
         Returns:
             EngineResult with success/failure, output, and events.
         """
-        if not self._director:
+        if not self._started:
             await self.start()
 
+        assert self._llm is not None
+        assert self._tools is not None
+        assert self._context is not None
+
         self._events.clear()
+        self._total_input_tokens = 0
+        self._total_output_tokens = 0
+        self._total_turns = 0
         self._emit("engine.task_started", {"instruction": instruction[:200]})
 
-        try:
-            from agents import Runner
+        # Add user message to context
+        self._context.add_user_message(instruction)
 
-            result = await asyncio.wait_for(
-                Runner.run(self._director, instruction, max_turns=50),
+        try:
+            final_text = await asyncio.wait_for(
+                self._run_loop(),
                 timeout=timeout,
             )
 
-            output = str(result.final_output) if result.final_output else ""
+            self._emit(
+                "engine.task_completed",
+                {
+                    "output_length": len(final_text),
+                    "turns": self._total_turns,
+                    "input_tokens": self._total_input_tokens,
+                    "output_tokens": self._total_output_tokens,
+                },
+            )
 
-            self._emit("engine.task_completed", {"output_length": len(output)})
-
-            return EngineResult.ok(output=output)
+            return EngineResult.ok(output=final_text)
 
         except TimeoutError:
-            self._emit("engine.timeout")
+            self._emit("engine.timeout", {"timeout": timeout})
             return EngineResult.fail(
                 f"Task timed out after {timeout}s. The agent may still be working."
             )
@@ -190,16 +249,144 @@ class AgentEngine:
             self._emit("engine.error", {"error": str(e)})
             return EngineResult.fail(str(e))
 
+    async def _run_loop(self) -> str:
+        """The core agent loop. Runs until the LLM stops calling tools."""
+        assert self._llm is not None
+        assert self._tools is not None
+        assert self._context is not None
+
+        final_text = ""
+
+        for turn in range(MAX_TURNS):
+            self._total_turns += 1
+
+            # Auto-compact if needed
+            if self._context.should_compact():
+                self._emit("engine.compacting", {"turn": turn})
+                await self._context.compact(self._llm)
+
+            # Get messages and tool definitions
+            messages = self._context.get_messages()
+            tool_defs = self._tools.get_tool_definitions()
+
+            # Call LLM
+            self._emit("engine.llm_call", {"turn": turn, "message_count": len(messages)})
+
+            response = await self._llm.complete(
+                messages=messages,
+                tools=tool_defs,
+                system=self._context.system_prompt,
+            )
+
+            self._total_input_tokens += response.input_tokens
+            self._total_output_tokens += response.output_tokens
+
+            # Process response
+            if response.text:
+                final_text = response.text
+                self._emit(
+                    "engine.assistant_text",
+                    {
+                        "text": response.text[:500],
+                        "turn": turn,
+                    },
+                )
+
+            # If no tool calls, we're done
+            if not response.tool_calls:
+                # Add assistant message to context
+                self._context.add_assistant_message(
+                    text=response.text,
+                    tool_calls=None,
+                )
+                break
+
+            # Add assistant message with tool calls to context
+            self._context.add_assistant_message(
+                text=response.text,
+                tool_calls=response.tool_calls,
+            )
+
+            # Execute tool calls
+            tool_results = await self._execute_tools(response.tool_calls)
+
+            # Add tool results to context
+            for result in tool_results:
+                self._context.add_tool_result(
+                    tool_use_id=result["tool_use_id"],
+                    content=result["content"],
+                    is_error=result.get("is_error", False),
+                )
+
+        else:
+            # Hit MAX_TURNS
+            self._emit("engine.max_turns", {"turns": MAX_TURNS})
+            if not final_text:
+                final_text = f"[Reached maximum {MAX_TURNS} turns without completing]"
+
+        return final_text
+
+    async def _execute_tools(self, tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Execute tool calls and return results."""
+        assert self._tools is not None
+
+        results: list[dict[str, Any]] = []
+
+        for call in tool_calls:
+            tool_name = call.get("name", "")
+            tool_input = call.get("input", {})
+            tool_use_id = call.get("id", "")
+
+            self._emit(
+                "engine.tool_start",
+                {
+                    "tool": tool_name,
+                    "input": str(tool_input)[:300],
+                },
+            )
+
+            try:
+                result = await self._tools.execute(tool_name, tool_input)
+
+                self._emit(
+                    "engine.tool_end",
+                    {
+                        "tool": tool_name,
+                        "success": result.success,
+                        "output_length": len(result.output),
+                    },
+                )
+
+                results.append(
+                    {
+                        "tool_use_id": tool_use_id,
+                        "content": result.output,
+                        "is_error": not result.success,
+                    }
+                )
+
+            except Exception as e:
+                logger.error("engine.tool_error", tool=tool_name, error=str(e))
+                self._emit("engine.tool_error", {"tool": tool_name, "error": str(e)})
+                results.append(
+                    {
+                        "tool_use_id": tool_use_id,
+                        "content": f"Tool execution error: {e}",
+                        "is_error": True,
+                    }
+                )
+
+        return results
+
     async def execute_streamed(
         self,
         instruction: str,
         *,
-        timeout: float = 600.0,
+        timeout: float = DEFAULT_TIMEOUT,
     ) -> AsyncIterator[StreamEvent]:
         """Execute a task with streaming events.
 
-        Yields StreamEvent objects as the agent works. The final event
-        contains the complete result.
+        Yields StreamEvent objects as the agent works.
 
         Args:
             instruction: What to build/do.
@@ -208,35 +395,122 @@ class AgentEngine:
         Yields:
             StreamEvent objects with real-time progress.
         """
-        if not self._director:
+        if not self._started:
             await self.start()
 
+        assert self._llm is not None
+        assert self._tools is not None
+        assert self._context is not None
+
         self._events.clear()
+        self._total_turns = 0
         yield StreamEvent(type="task_started", data={"instruction": instruction[:200]})
 
+        # Add user message
+        self._context.add_user_message(instruction)
+
         try:
-            from agents import Runner
+            final_text = ""
 
-            result = Runner.run_streamed(self._director, instruction, max_turns=50)
+            for turn in range(MAX_TURNS):
+                self._total_turns += 1
 
-            async for event in result.stream_events():
-                event_type = getattr(event, "type", str(type(event).__name__))
+                # Auto-compact if needed
+                if self._context.should_compact():
+                    yield StreamEvent(type="compacting", data={"turn": turn})
+                    await self._context.compact(self._llm)
 
-                # Map SDK events to our stream events
-                if event_type == "raw_response_event":
-                    # Skip raw API events — too noisy
-                    continue
+                messages = self._context.get_messages()
+                tool_defs = self._tools.get_tool_definitions()
 
-                yield StreamEvent(
-                    type=str(event_type),
-                    data={"event": str(event)[:500]},
+                yield StreamEvent(type="llm_call", data={"turn": turn})
+
+                # Stream the LLM response
+                text_chunks: list[str] = []
+                response: LLMResponse | None = None
+
+                async for chunk in self._llm.stream(
+                    messages=messages,
+                    tools=tool_defs,
+                    system=self._context.system_prompt,
+                ):
+                    if chunk.text:
+                        text_chunks.append(chunk.text)
+                        yield StreamEvent(
+                            type="text_delta",
+                            data={"text": chunk.text, "turn": turn},
+                        )
+                    if chunk.is_final:
+                        response = chunk.final_response
+
+                if response is None:
+                    # Build response from chunks
+                    full_text = "".join(text_chunks)
+                    response = LLMResponse(text=full_text, tool_calls=[])
+
+                if response.text:
+                    final_text = response.text
+
+                # No tool calls → done
+                if not response.tool_calls:
+                    self._context.add_assistant_message(
+                        text=response.text,
+                        tool_calls=None,
+                    )
+                    break
+
+                # Add assistant message with tool calls
+                self._context.add_assistant_message(
+                    text=response.text,
+                    tool_calls=response.tool_calls,
                 )
 
-            # Final output
-            final_output = str(result.final_output) if result.final_output else ""
+                # Execute tools
+                for call in response.tool_calls:
+                    tool_name = call.get("name", "")
+                    tool_input = call.get("input", {})
+                    tool_use_id = call.get("id", "")
+
+                    yield StreamEvent(
+                        type="tool_start",
+                        data={
+                            "tool": tool_name,
+                            "input": str(tool_input)[:300],
+                        },
+                    )
+
+                    try:
+                        result = await self._tools.execute(tool_name, tool_input)
+                        yield StreamEvent(
+                            type="tool_end",
+                            data={
+                                "tool": tool_name,
+                                "success": result.success,
+                                "output": result.output[:500],
+                            },
+                        )
+                        self._context.add_tool_result(
+                            tool_use_id=tool_use_id,
+                            content=result.output,
+                            is_error=not result.success,
+                        )
+                    except Exception as e:
+                        yield StreamEvent(
+                            type="tool_error",
+                            data={
+                                "tool": tool_name,
+                                "error": str(e),
+                            },
+                        )
+                        self._context.add_tool_result(
+                            tool_use_id=tool_use_id,
+                            content=f"Tool error: {e}",
+                            is_error=True,
+                        )
+
             yield StreamEvent(
                 type="task_completed",
-                data={"output": final_output},
+                data={"output": final_text, "turns": self._total_turns},
             )
 
         except TimeoutError:
@@ -244,80 +518,6 @@ class AgentEngine:
         except Exception as e:
             logger.error("engine.streamed_error", error=str(e))
             yield StreamEvent(type="error", data={"error": str(e)})
-
-    def _configure_env(self) -> None:
-        """Set environment variables for the agents SDK and LiteLLM."""
-        # Set API key for the configured provider
-        if self._config.api_key:
-            provider = (
-                self._config.provider.value
-                if hasattr(self._config.provider, "value")
-                else str(self._config.provider)
-            )
-
-            if provider == "openai":
-                os.environ.setdefault("OPENAI_API_KEY", self._config.api_key)
-            elif provider == "anthropic":
-                os.environ.setdefault("ANTHROPIC_API_KEY", self._config.api_key)
-            elif provider == "deepseek":
-                os.environ.setdefault("DEEPSEEK_API_KEY", self._config.api_key)
-            # LiteLLM reads these env vars automatically
-
-        # If using non-OpenAI provider without an OpenAI key, disable tracing
-        if not os.environ.get("OPENAI_API_KEY"):
-            try:
-                from agents import set_tracing_disabled
-
-                set_tracing_disabled(True)
-            except ImportError:
-                pass
-
-    def _resolve_model(self) -> str:
-        """Resolve the model identifier, adding litellm/ prefix for non-OpenAI providers."""
-        model = self._config.model or "gpt-4o"
-        provider = (
-            self._config.provider.value
-            if hasattr(self._config.provider, "value")
-            else str(self._config.provider)
-        )
-
-        # OpenAI models don't need a prefix
-        if (
-            provider == "openai"
-            or model.startswith("gpt-")
-            or model.startswith("o1-")
-            or model.startswith("o3-")
-        ):
-            return model
-
-        # Non-OpenAI models need litellm/ prefix
-        if model.startswith("litellm/"):
-            return model
-
-        provider_prefixes = {
-            "anthropic": "litellm/anthropic",
-            "ollama": "litellm/ollama_chat",
-            "deepseek": "litellm/deepseek",
-        }
-        prefix = provider_prefixes.get(provider, f"litellm/{provider}")
-        return f"{prefix}/{model}"
-
-    async def _start_mcp_servers(self) -> list[Any]:
-        """Start MCP servers and register them in the exit stack."""
-        servers: list[Any] = []
-
-        from hauba.engine.mcp_servers import create_playwright_mcp
-
-        playwright = create_playwright_mcp(headless=True)
-        if playwright and self._exit_stack:
-            try:
-                await self._exit_stack.enter_async_context(playwright)
-                servers.append(playwright)
-                logger.info("mcp.playwright_started")
-            except Exception as e:
-                logger.warning("mcp.playwright_failed", error=str(e))
-
-        return servers
 
     async def __aenter__(self) -> AgentEngine:
         await self.start()

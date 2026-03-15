@@ -393,16 +393,16 @@ def init() -> None:
 
     config.save()
 
-    # ── Agents SDK check ──────────────────────────────────────────────────
+    # ── LLM Engine check ─────────────────────────────────────────────────
     console.print()
     console.print("  [dim]Checking AI Engine...[/dim]")
     try:
-        import agents  # noqa: F401
+        import litellm  # noqa: F401
 
-        console.print("  [green]+[/green] OpenAI Agents SDK is installed")
+        console.print("  [green]+[/green] LiteLLM engine is installed")
     except ImportError:
         console.print(
-            "  [yellow]![/yellow] Agents SDK not found. Install: pip install 'openai-agents[litellm]'"
+            "  [yellow]![/yellow] LiteLLM not found. Install: pip install litellm"
         )
     except Exception:
         console.print("  [green]+[/green] Engine check complete")
@@ -828,7 +828,7 @@ async def _run_task(
     continue_session: bool = False,
     interactive: bool = True,
 ) -> None:
-    """Execute a task using AgentEngine (OpenAI Agents SDK, V3)."""
+    """Execute a task using AgentEngine (V4 — custom agent loop)."""
     from hauba.core.config import ConfigManager
     from hauba.engine.agent_engine import AgentEngine
     from hauba.engine.types import EngineConfig, ProviderType
@@ -839,7 +839,8 @@ async def _run_task(
         "anthropic": ProviderType.ANTHROPIC,
         "openai": ProviderType.OPENAI,
         "ollama": ProviderType.OLLAMA,
-        "deepseek": ProviderType.OPENAI,
+        "deepseek": ProviderType.DEEPSEEK,
+        "google": ProviderType.GOOGLE,
     }
     provider = provider_map.get(config.settings.llm.provider, ProviderType.ANTHROPIC)
 
@@ -867,9 +868,9 @@ async def _run_task(
     if not engine.is_available:
         console.print(
             Panel(
-                "[bold red]OpenAI Agents SDK not installed[/bold red]\n\n"
-                "Hauba V3 requires the OpenAI Agents SDK.\n\n"
-                "  Install: [bold]pip install 'openai-agents[litellm]'[/bold]",
+                "[bold red]LiteLLM not installed[/bold red]\n\n"
+                "Hauba V4 requires LiteLLM for LLM API calls.\n\n"
+                "  Install: [bold]pip install litellm[/bold]",
                 title="Missing Dependency",
                 border_style="red",
             )
@@ -883,7 +884,7 @@ async def _run_task(
             f"  Provider: {config.settings.llm.provider}\n"
             f"  Model:    {config.settings.llm.model}\n"
             f"  Output:   {ws_path}\n"
-            f"  Engine:   OpenAI Agents SDK (V3)\n"
+            f"  Engine:   Custom Agent Loop (V4)\n"
             + (
                 f"  Skills:   {', '.join(s for s in skill_context.split('### ')[1:3] if s)[:80]}\n"
                 if skill_context
@@ -894,37 +895,49 @@ async def _run_task(
         )
     )
 
-    console.print("  [dim]Starting agent team (Director → Coder/Browser/Reviewer)...[/dim]")
+    console.print("  [dim]Starting Hauba agent (10 tools, auto-compaction)...[/dim]")
 
     try:
         if interactive:
             # Use streaming for real-time output
             async for event in engine.execute_streamed(task, timeout=600.0):
                 if event.type == "task_started":
-                    console.print("  [green]Agent team started[/green]")
+                    console.print("  [green]Agent started[/green]")
+                elif event.type == "text_delta":
+                    # Stream text as it arrives
+                    text = event.data.get("text", "")
+                    if text:
+                        console.print(text, end="")
+                elif event.type == "tool_start":
+                    tool = event.data.get("tool", "")
+                    inp = event.data.get("input", "")[:100]
+                    console.print(f"\n  [dim]> {tool}: {inp}[/dim]")
+                elif event.type == "tool_end":
+                    tool = event.data.get("tool", "")
+                    success = event.data.get("success", False)
+                    status = "[green]OK[/green]" if success else "[red]FAIL[/red]"
+                    console.print(f"  [dim]< {tool}: {status}[/dim]")
+                elif event.type == "compacting":
+                    console.print("  [dim]Compacting context...[/dim]")
                 elif event.type == "task_completed":
                     output = event.data.get("output", "")
+                    turns = event.data.get("turns", 0)
                     console.print()
                     if output:
                         console.print(
                             Panel(
                                 output[:3000] if len(output) > 3000 else output,
-                                title="[bold green]Task Complete[/bold green]",
+                                title=f"[bold green]Task Complete ({turns} turns)[/bold green]",
                                 border_style="green",
                                 padding=(1, 2),
                             )
                         )
                     else:
-                        console.print("  [green]Task completed (no output)[/green]")
+                        console.print(f"  [green]Task completed in {turns} turns (no output)[/green]")
                 elif event.type == "timeout":
                     console.print("  [red]Task timed out[/red]")
                 elif event.type == "error":
                     console.print(f"  [red]Error: {event.data.get('error', 'Unknown')}[/red]")
-                elif event.type not in ("raw_response_event",):
-                    # Show agent activity
-                    detail = event.data.get("event", "")[:200] if event.data else ""
-                    if detail and event.type:
-                        console.print(f"  [dim]{event.type}: {detail}[/dim]")
         else:
             # Non-interactive: run to completion
             result = await engine.execute(task, timeout=600.0)
@@ -1164,15 +1177,15 @@ def status() -> None:
     table.add_row("Owner", config.settings.owner_name)
     table.add_row("Provider", config.settings.llm.provider)
     table.add_row("Model", config.settings.llm.model)
-    table.add_row("Engine", "OpenAI Agents SDK (V3)")
+    table.add_row("Engine", "Custom Agent Loop (V4)")
 
-    # Check for agents SDK
+    # Check for litellm
     try:
-        import agents  # noqa: F401
+        import litellm  # noqa: F401
 
-        table.add_row("Agents SDK", "[green]installed[/green]")
+        table.add_row("LiteLLM", "[green]installed[/green]")
     except ImportError:
-        table.add_row("Agents SDK", "[red]not installed[/red]")
+        table.add_row("LiteLLM", "[red]not installed[/red]")
 
     console.print(Panel(table, title="[bold blue]Hauba Status[/bold blue]", border_style="blue"))
 
