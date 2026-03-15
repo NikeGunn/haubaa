@@ -143,9 +143,7 @@ class ToolRegistry:
             try:
                 # Resolve working directory
                 if cwd:
-                    effective_cwd = os.path.abspath(
-                        os.path.join(self._working_directory, cwd)
-                    )
+                    effective_cwd = os.path.abspath(os.path.join(self._working_directory, cwd))
                     if not os.path.isdir(effective_cwd):
                         return ToolResult.error(
                             f"Directory not found: {cwd} (resolved to {effective_cwd})"
@@ -187,9 +185,7 @@ class ToolRegistry:
                     )
 
                 # Normal synchronous execution
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=timeout
-                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
 
                 output = stdout.decode("utf-8", errors="replace")
                 err = stderr.decode("utf-8", errors="replace")
