@@ -218,6 +218,7 @@ class AgentEngine:
         self._total_input_tokens = 0
         self._total_output_tokens = 0
         self._total_turns = 0
+        self._tools.tracker.reset()
         self._emit("engine.task_started", {"instruction": instruction[:200]})
 
         # Add user message to context
@@ -262,10 +263,18 @@ class AgentEngine:
         for turn in range(MAX_TURNS):
             self._total_turns += 1
 
+            # Update session tracker turn
+            self._tools.tracker.set_turn(turn)
+
             # Auto-compact if needed
             if self._context.should_compact():
                 self._emit("engine.compacting", {"turn": turn})
                 await self._context.compact(self._llm)
+
+            # Inject session context into system prompt
+            session_ctx = self._tools.tracker.get_session_context()
+            if session_ctx:
+                self._context.update_session_context(session_ctx)
 
             # Get messages and tool definitions
             messages = self._context.get_messages()
@@ -406,6 +415,7 @@ class AgentEngine:
 
         self._events.clear()
         self._total_turns = 0
+        self._tools.tracker.reset()
         yield StreamEvent(type="task_started", data={"instruction": instruction[:200]})
 
         # Add user message
@@ -417,10 +427,18 @@ class AgentEngine:
             for turn in range(MAX_TURNS):
                 self._total_turns += 1
 
+                # Update session tracker turn
+                self._tools.tracker.set_turn(turn)
+
                 # Auto-compact if needed
                 if self._context.should_compact():
                     yield StreamEvent(type="compacting", data={"turn": turn})
                     await self._context.compact(self._llm)
+
+                # Inject session context into system prompt
+                session_ctx = self._tools.tracker.get_session_context()
+                if session_ctx:
+                    self._context.update_session_context(session_ctx)
 
                 messages = self._context.get_messages()
                 tool_defs = self._tools.get_tool_definitions()

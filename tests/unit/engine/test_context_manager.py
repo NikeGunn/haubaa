@@ -242,3 +242,27 @@ async def test_compaction_counter_increments() -> None:
     mock_llm.summarize = AsyncMock(return_value="Summary 2")
     await ctx.compact(mock_llm)
     assert ctx._compaction_count == 2
+
+
+# --- Session context injection ---
+
+
+def test_update_session_context() -> None:
+    """update_session_context appends session state to system prompt."""
+    ctx = ContextManager(system_prompt="You are Hauba.\n\n## Tools")
+    ctx.update_session_context("## Session State\nTurn 3. 5 tool calls.")
+
+    assert "## Session State" in ctx.system_prompt
+    assert "Turn 3" in ctx.system_prompt
+    assert "You are Hauba." in ctx.system_prompt
+
+
+def test_update_session_context_replaces_old() -> None:
+    """Calling update_session_context twice replaces the old context."""
+    ctx = ContextManager(system_prompt="Base prompt")
+    ctx.update_session_context("## Session State\nTurn 1.")
+    ctx.update_session_context("## Session State\nTurn 5. 10 tool calls.")
+
+    assert "Turn 5" in ctx.system_prompt
+    assert "Turn 1" not in ctx.system_prompt
+    assert ctx.system_prompt.count("## Session State") == 1

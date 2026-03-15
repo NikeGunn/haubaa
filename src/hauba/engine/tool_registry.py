@@ -22,11 +22,14 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import structlog
+
+from hauba.engine.session_tracker import SessionTracker
 
 logger = structlog.get_logger()
 
@@ -81,6 +84,8 @@ class ToolRegistry:
         self._working_directory = os.path.abspath(working_directory)
         self._tools: dict[str, ToolDefinition] = {}
         self._background_processes: dict[int, Any] = {}
+        self.tracker = SessionTracker()
+        self.tracker.set_working_directory(self._working_directory)
         self._register_core_tools()
 
     def _register_core_tools(self) -> None:
@@ -115,6 +120,7 @@ class ToolRegistry:
         if not tool:
             return ToolResult.error(f"Unknown tool: {name}. Available: {list(self._tools.keys())}")
 
+        start_time = time.monotonic()
         try:
             result = await tool.execute_fn(**params)
             # Truncate very long output
@@ -123,10 +129,34 @@ class ToolRegistry:
                     result.output[:MAX_OUTPUT_SIZE]
                     + f"\n\n[Output truncated at {MAX_OUTPUT_SIZE} chars]"
                 )
+            duration_ms = (time.monotonic() - start_time) * 1000
+            self.tracker.record_tool_call(
+                tool_name=name,
+                tool_input=params,
+                success=result.success,
+                duration_ms=duration_ms,
+                output=result.output,
+            )
             return result
         except TypeError as e:
+            duration_ms = (time.monotonic() - start_time) * 1000
+            self.tracker.record_tool_call(
+                tool_name=name,
+                tool_input=params,
+                success=False,
+                duration_ms=duration_ms,
+                output=str(e),
+            )
             return ToolResult.error(f"Invalid parameters for {name}: {e}")
         except Exception as e:
+            duration_ms = (time.monotonic() - start_time) * 1000
+            self.tracker.record_tool_call(
+                tool_name=name,
+                tool_input=params,
+                success=False,
+                duration_ms=duration_ms,
+                output=str(e),
+            )
             logger.error("tool.execute_error", tool=name, error=str(e))
             return ToolResult.error(f"{name} failed: {e}")
 

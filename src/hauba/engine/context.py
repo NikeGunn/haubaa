@@ -164,6 +164,16 @@ class ContextManager:
             # Fallback: just trim oldest messages
             self._messages = self._messages[-(keep_count + 2) :]
 
+    def update_session_context(self, session_context: str) -> None:
+        """Update the system prompt with current session state.
+
+        Appends or replaces the session context block at the end of the
+        system prompt so the LLM always knows what it has done so far.
+        """
+        marker = "\n\n## Session State"
+        base = self.system_prompt.split(marker)[0]
+        self.system_prompt = base + "\n\n" + session_context
+
     def clear(self) -> None:
         """Clear all messages."""
         self._messages.clear()

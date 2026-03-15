@@ -570,3 +570,70 @@ async def test_cleanup_background_processes(tmp_path: Path) -> None:
 
     await registry.cleanup_background_processes()
     assert len(registry._background_processes) == 0
+
+
+# --- Tracker integration ---
+
+
+def test_registry_has_tracker() -> None:
+    """ToolRegistry has a SessionTracker."""
+    registry = ToolRegistry()
+    assert registry.tracker is not None
+    assert registry.tracker.total_actions == 0
+
+
+@pytest.mark.asyncio
+async def test_tracker_records_tool_calls() -> None:
+    """execute() records tool calls in the tracker."""
+    registry = ToolRegistry()
+    await registry.execute("bash", {"command": "echo tracked"})
+    assert registry.tracker.total_actions == 1
+    assert registry.tracker.actions[0].tool_name == "bash"
+    assert registry.tracker.actions[0].success is True
+    assert registry.tracker.actions[0].duration_ms > 0
+
+
+@pytest.mark.asyncio
+async def test_tracker_records_failures() -> None:
+    """Failed tool calls are tracked with success=False."""
+    registry = ToolRegistry()
+    await registry.execute("read_file", {"path": "/nonexistent/file.txt"})
+    assert registry.tracker.total_actions == 1
+    assert registry.tracker.total_errors == 1
+    assert registry.tracker.actions[0].success is False
+
+
+@pytest.mark.asyncio
+async def test_tracker_records_file_ops(tmp_path: Path) -> None:
+    """File operations are tracked in file sets."""
+    registry = ToolRegistry(working_directory=str(tmp_path))
+
+    # Write a file
+    await registry.execute("write_file", {"path": "test.py", "content": "pass"})
+    assert "test.py" in registry.tracker.files_written
+
+    # Read it
+    await registry.execute("read_file", {"path": "test.py"})
+    assert "test.py" in registry.tracker.files_read
+
+    # Edit it
+    await registry.execute(
+        "edit_file",
+        {"path": "test.py", "old_string": "pass", "new_string": "x = 1"},
+    )
+    assert "test.py" in registry.tracker.files_edited
+
+
+@pytest.mark.asyncio
+async def test_tracker_session_context(tmp_path: Path) -> None:
+    """Tracker produces session context after tool calls."""
+    registry = ToolRegistry(working_directory=str(tmp_path))
+    registry.tracker.set_turn(1)
+
+    await registry.execute("write_file", {"path": "app.py", "content": "hello"})
+    await registry.execute("bash", {"command": "echo done"})
+
+    ctx = registry.tracker.get_session_context()
+    assert "Session State" in ctx
+    assert "2 tool calls" in ctx
+    assert "app.py" in ctx
