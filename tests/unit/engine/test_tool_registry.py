@@ -673,3 +673,145 @@ async def test_tracker_session_context(tmp_path: Path) -> None:
     assert "Session State" in ctx
     assert "2 tool calls" in ctx
     assert "app.py" in ctx
+
+
+# --- Command interception layer ---
+
+
+def test_check_blocked_command_rm_rf_root() -> None:
+    """rm -rf / is blocked."""
+    from hauba.engine.tool_registry import _check_blocked_command
+
+    assert _check_blocked_command("rm -rf /") is not None
+    assert _check_blocked_command("rm -rf / --no-preserve-root") is not None
+
+
+def test_check_blocked_command_shutdown() -> None:
+    """shutdown is blocked."""
+    from hauba.engine.tool_registry import _check_blocked_command
+
+    assert _check_blocked_command("shutdown -h now") is not None
+    assert _check_blocked_command("reboot") is not None
+
+
+def test_check_blocked_command_safe_commands() -> None:
+    """Normal commands are not blocked."""
+    from hauba.engine.tool_registry import _check_blocked_command
+
+    assert _check_blocked_command("npm install") is None
+    assert _check_blocked_command("rm -rf node_modules") is None
+    assert _check_blocked_command("echo hello") is None
+
+
+def test_extract_cd_prefix() -> None:
+    """cd <dir> && <cmd> is split into (cmd, dir)."""
+    from hauba.engine.tool_registry import _extract_cd_prefix
+
+    cmd, cwd = _extract_cd_prefix("cd my-app && npm install")
+    assert cmd == "npm install"
+    assert cwd == "my-app"
+
+
+def test_extract_cd_prefix_semicolon() -> None:
+    """cd <dir> ; <cmd> is also handled."""
+    from hauba.engine.tool_registry import _extract_cd_prefix
+
+    cmd, cwd = _extract_cd_prefix("cd src ; python main.py")
+    assert cmd == "python main.py"
+    assert cwd == "src"
+
+
+def test_extract_cd_prefix_no_cd() -> None:
+    """Commands without cd prefix are returned unchanged."""
+    from hauba.engine.tool_registry import _extract_cd_prefix
+
+    cmd, cwd = _extract_cd_prefix("npm install")
+    assert cmd == "npm install"
+    assert cwd == ""
+
+
+def test_is_long_running_npm_start() -> None:
+    """npm start is detected as long-running."""
+    from hauba.engine.tool_registry import _is_long_running_command
+
+    assert _is_long_running_command("npm start")
+    assert _is_long_running_command("npm run dev")
+    assert _is_long_running_command("yarn start")
+    assert _is_long_running_command("npx serve")
+    assert _is_long_running_command("python -m http.server 8080")
+    assert _is_long_running_command("flask run --port 5000")
+    assert _is_long_running_command("uvicorn main:app --reload")
+
+
+def test_is_long_running_safe_commands() -> None:
+    """Normal commands are NOT detected as long-running."""
+    from hauba.engine.tool_registry import _is_long_running_command
+
+    assert not _is_long_running_command("npm install")
+    assert not _is_long_running_command("npm run build")
+    assert not _is_long_running_command("npm test")
+    assert not _is_long_running_command("python setup.py install")
+    assert not _is_long_running_command("echo hello")
+
+
+def test_rewrite_command_for_platform_unix() -> None:
+    """On Unix, commands are not rewritten."""
+    from hauba.engine.tool_registry import _rewrite_command_for_platform
+
+    assert _rewrite_command_for_platform("rm -rf dist", is_windows=False) == "rm -rf dist"
+    assert _rewrite_command_for_platform("cat file.txt", is_windows=False) == "cat file.txt"
+
+
+def test_rewrite_command_for_platform_windows() -> None:
+    """On Windows, Unix commands are rewritten."""
+    from hauba.engine.tool_registry import _rewrite_command_for_platform
+
+    assert "rmdir" in _rewrite_command_for_platform("rm -rf dist", is_windows=True)
+    assert "type" in _rewrite_command_for_platform("cat file.txt", is_windows=True)
+    assert "dir" in _rewrite_command_for_platform("ls", is_windows=True)
+    assert "where" in _rewrite_command_for_platform("which python", is_windows=True)
+
+
+@pytest.mark.asyncio
+async def test_bash_auto_background_npm_start(tmp_path: Path) -> None:
+    """npm start is automatically switched to background mode."""
+    registry = ToolRegistry(working_directory=str(tmp_path))
+    # Create a fake package.json so npm start would try to run
+    (tmp_path / "package.json").write_text('{"scripts":{"start":"echo ok"}}')
+
+    result = await registry.execute("bash", {"command": "npm start"})
+
+    # Should have been auto-switched to background mode
+    assert result.success
+    assert "background" in result.output.lower() or "PID" in result.output
+
+    await registry.cleanup_background_processes()
+
+
+@pytest.mark.asyncio
+async def test_bash_cd_extraction(tmp_path: Path) -> None:
+    """'cd <dir> && <cmd>' extracts dir as cwd."""
+    subdir = tmp_path / "myapp"
+    subdir.mkdir()
+    (subdir / "hello.txt").write_text("found-it")
+
+    registry = ToolRegistry(working_directory=str(tmp_path))
+    result = await registry.execute(
+        "bash",
+        {
+            "command": "cd myapp && type hello.txt"
+            if platform.system() == "Windows"
+            else "cd myapp && cat hello.txt",
+        },
+    )
+    assert result.success
+    assert "found-it" in result.output
+
+
+@pytest.mark.asyncio
+async def test_bash_blocked_command() -> None:
+    """Blocked commands return error without executing."""
+    registry = ToolRegistry()
+    result = await registry.execute("bash", {"command": "shutdown -h now"})
+    assert not result.success
+    assert "blocked" in result.output.lower()

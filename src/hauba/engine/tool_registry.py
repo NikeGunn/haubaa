@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
+import re
 import signal
 import subprocess
 import time
@@ -183,7 +184,30 @@ class ToolRegistry:
         ) -> ToolResult:
             """Run a shell command with resource guards."""
             try:
-                # Resolve working directory
+                # ── STEP 1: Block dangerous commands ──
+                blocked = _check_blocked_command(command)
+                if blocked:
+                    return ToolResult.error(blocked)
+
+                # ── STEP 2: Auto-extract cd from "cd X && cmd" pattern ──
+                command, extracted_cwd = _extract_cd_prefix(command)
+                if extracted_cwd and not cwd:
+                    cwd = extracted_cwd
+
+                # ── STEP 3: Auto-detect long-running commands → force background ──
+                if not background and _is_long_running_command(command):
+                    background = True
+                    logger.info(
+                        "tool.bash.auto_background",
+                        command=command[:80],
+                        reason="detected long-running server/watcher command",
+                    )
+
+                # ── STEP 4: Platform-aware command rewriting ──
+                is_windows = platform.system() == "Windows"
+                command = _rewrite_command_for_platform(command, is_windows)
+
+                # ── STEP 5: Resolve working directory ──
                 if cwd:
                     effective_cwd = os.path.abspath(os.path.join(self._working_directory, cwd))
                     if not os.path.isdir(effective_cwd):
@@ -193,7 +217,7 @@ class ToolRegistry:
                 else:
                     effective_cwd = self._working_directory
 
-                # Enforce concurrent background process limit
+                # ── STEP 6: Enforce concurrent background process limit ──
                 if background and len(self._background_processes) >= MAX_BACKGROUND_PROCESSES:
                     return ToolResult.error(
                         f"Too many background processes ({MAX_BACKGROUND_PROCESSES} max). "
@@ -201,11 +225,9 @@ class ToolRegistry:
                         "on Windows or bash(command='kill <pid>') on Unix."
                     )
 
-                # Create subprocess with process group for tree-kill
-                is_windows = platform.system() == "Windows"
+                # ── STEP 7: Create subprocess with process group ──
                 create_flags = 0
                 if is_windows:
-                    # CREATE_NEW_PROCESS_GROUP allows killing the entire tree
                     create_flags = subprocess.CREATE_NEW_PROCESS_GROUP
                     proc = await asyncio.create_subprocess_shell(
                         command,
@@ -215,7 +237,6 @@ class ToolRegistry:
                         creationflags=create_flags,
                     )
                 else:
-                    # start_new_session=True creates a new process group
                     proc = await asyncio.create_subprocess_exec(
                         "/bin/bash",
                         "-c",
@@ -226,7 +247,7 @@ class ToolRegistry:
                         start_new_session=True,
                     )
 
-                # Background mode: collect initial output and return immediately
+                # ── STEP 8: Background mode ──
                 if background:
                     initial = await _collect_initial_output(proc, seconds=5)
                     pid = proc.pid or 0
@@ -241,11 +262,10 @@ class ToolRegistry:
                         pid=pid,
                     )
 
-                # Normal synchronous execution with timeout + process tree kill
+                # ── STEP 9: Synchronous execution with timeout + tree kill ──
                 try:
                     stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
                 except TimeoutError:
-                    # CRITICAL: Kill the ENTIRE process tree, not just parent
                     await _kill_process_tree(proc)
                     return ToolResult.error(
                         f"Command timed out after {timeout}s and was killed. "
@@ -953,6 +973,135 @@ def _list_recursive(
             if pattern == "*" or item.match(pattern):
                 file_size = item.stat().st_size
                 entries.append(f"{line_prefix}{rel}  ({_human_size(file_size)})")
+
+
+# ─── COMMAND INTERCEPTION LAYER ──────────────────────────────────
+#
+# Enforcement at the execution boundary — don't rely on the LLM
+# reading system prompt instructions. Weaker models (gpt-4o-mini)
+# ignore prompts but they can't bypass tool-level guards.
+
+# Commands that block forever if run synchronously (dev servers, watchers)
+_LONG_RUNNING_PATTERNS: list[tuple[str, str]] = [
+    # npm/yarn/pnpm dev servers and watchers
+    (r"\bnpm\s+start\b", "npm start"),
+    (r"\bnpm\s+run\s+dev\b", "npm run dev"),
+    (r"\bnpm\s+run\s+serve\b", "npm run serve"),
+    (r"\bnpm\s+run\s+watch\b", "npm run watch"),
+    (r"\byarn\s+start\b", "yarn start"),
+    (r"\byarn\s+dev\b", "yarn dev"),
+    (r"\bpnpm\s+start\b", "pnpm start"),
+    (r"\bpnpm\s+dev\b", "pnpm dev"),
+    (r"\bnpx\s+serve\b", "npx serve"),
+    (r"\bnpx\s+next\s+dev\b", "npx next dev"),
+    # Python servers
+    (r"\bpython[3]?\s+.*-m\s+http\.server\b", "python -m http.server"),
+    (r"\bpython[3]?\s+.*manage\.py\s+runserver\b", "django runserver"),
+    (r"\buvicorn\b.*--reload", "uvicorn"),
+    (r"\bflask\s+run\b", "flask run"),
+    (r"\bgunicorn\b", "gunicorn"),
+    # Generic watchers / servers
+    (r"\bnodemon\b", "nodemon"),
+    (r"\btailwindcss\b.*--watch\b", "tailwind watch"),
+    (r"\blive-server\b", "live-server"),
+]
+
+# Patterns that should never be executed
+_BLOCKED_PATTERNS: list[tuple[str, str]] = [
+    (r"\brm\s+-rf\s+/\s*$", "rm -rf / (deletes entire filesystem)"),
+    (r"\brm\s+-rf\s+/\s+", "rm -rf / (deletes entire filesystem)"),
+    (r":\(\)\s*\{.*\|.*&\s*\}\s*;", "fork bomb"),
+    (r"\bshutdown\b", "system shutdown"),
+    (r"\breboot\b", "system reboot"),
+    (r"\binit\s+0\b", "system halt"),
+    (r"\bmkfs\b", "filesystem format"),
+    (r"\bformat\s+[a-zA-Z]:", "Windows drive format"),
+    (r"\bdd\s+.*of=/dev/[sh]d", "disk overwrite"),
+]
+
+# Pattern to detect "cd <dir> && <rest>" or "cd <dir> ; <rest>"
+_CD_PREFIX_RE = re.compile(r"^\s*cd\s+([^\s;&|]+)\s*(?:&&|;)\s*(.+)$", re.DOTALL)
+
+
+def _check_blocked_command(command: str) -> str | None:
+    """Check if a command matches a blocked pattern.
+
+    Returns error message if blocked, None if OK.
+    """
+    for pattern, description in _BLOCKED_PATTERNS:
+        if re.search(pattern, command):
+            return (
+                f"BLOCKED: '{description}' is a destructive command that could "
+                "damage the system. This command will not be executed."
+            )
+    return None
+
+
+def _extract_cd_prefix(command: str) -> tuple[str, str]:
+    """Extract 'cd <dir> &&' prefix from a command.
+
+    Agents often write 'cd my-app && npm install' because they forget
+    that cd doesn't persist. Instead of letting it fail, we extract
+    the directory and use it as the cwd parameter.
+
+    Returns (remaining_command, extracted_cwd).
+    If no cd prefix found, returns (original_command, "").
+    """
+    match = _CD_PREFIX_RE.match(command)
+    if match:
+        directory = match.group(1).strip().strip("'\"")
+        remaining = match.group(2).strip()
+        return remaining, directory
+    return command, ""
+
+
+def _is_long_running_command(command: str) -> bool:
+    """Detect commands that will block forever (dev servers, watchers).
+
+    These must run in background mode. Without auto-detection, the agent
+    will hang on timeout, then retry in a loop — never completing the task.
+    """
+    return any(re.search(p, command) for p, _ in _LONG_RUNNING_PATTERNS)
+
+
+def _rewrite_command_for_platform(command: str, is_windows: bool) -> str:
+    """Rewrite commands for platform compatibility.
+
+    Agents often generate Unix commands on Windows (rm -rf, cat, etc.).
+    Instead of failing, we transparently rewrite to the Windows equivalent.
+    """
+    if not is_windows:
+        return command
+
+    # rm -rf <dir> → rmdir /S /Q <dir>
+    rm_match = re.match(r"^\s*rm\s+-rf?\s+(.+)$", command)
+    if rm_match:
+        target = rm_match.group(1).strip()
+        return f'rmdir /S /Q "{target}"'
+
+    # cat <file> → type <file>
+    cat_match = re.match(r"^\s*cat\s+(.+)$", command)
+    if cat_match:
+        return f"type {cat_match.group(1).strip()}"
+
+    # ls → dir
+    if re.match(r"^\s*ls\s*$", command):
+        return "dir"
+    ls_match = re.match(r"^\s*ls\s+(-[a-zA-Z]+\s+)?(.+)$", command)
+    if ls_match:
+        return f"dir {ls_match.group(2).strip()}"
+
+    # touch <file> → type nul > <file>
+    touch_match = re.match(r"^\s*touch\s+(.+)$", command)
+    if touch_match:
+        return f"type nul > {touch_match.group(1).strip()}"
+
+    # which <cmd> → where <cmd>
+    which_match = re.match(r"^\s*which\s+(.+)$", command)
+    if which_match:
+        return f"where {which_match.group(1).strip()}"
+
+    return command
 
 
 async def _kill_process_tree(proc: Any) -> None:
